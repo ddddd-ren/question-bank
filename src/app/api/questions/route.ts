@@ -32,6 +32,10 @@ export async function GET(request: NextRequest) {
       page: query.page,
       pageSize: query.pageSize,
       totalPages: Math.ceil(result.total / query.pageSize),
+    }, {
+      headers: {
+        "Cache-Control": "private, max-age=30, stale-while-revalidate=15",
+      },
     })
   } catch (error) {
     return handleApiError(error)
