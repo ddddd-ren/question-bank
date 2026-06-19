@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import React, { useState, memo } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { BookOpen, FileText, FileUp, GraduationCap, Heart, LayoutDashboard, Layers, Menu, PenTool, Settings, X, XCircle } from "lucide-react"
@@ -19,7 +19,7 @@ const navItems = [
   { href: "/settings", label: "设置", icon: Settings },
 ]
 
-export function Nav() {
+export const Nav = memo(function Nav() {
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
@@ -99,4 +99,4 @@ export function Nav() {
       )}
     </header>
   )
-}
+})

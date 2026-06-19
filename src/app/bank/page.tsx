@@ -225,7 +225,7 @@ export default function BankPage() {
           questions.map((q: { id: number; type: string; content: string; answer: string | null }, idx: number) => (
             <Card
               key={q.id}
-              className="card-hover animate-slide-up"
+              className="card-hover animate-slide-up card-list-item"
               style={{ animationDelay: `${idx * 50}ms` }}
             >
               <CardContent className="p-4">

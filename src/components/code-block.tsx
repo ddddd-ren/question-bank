@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import React, { useEffect, useRef } from "react"
 import hljs from "highlight.js/lib/core"
 import javascript from "highlight.js/lib/languages/javascript"
 import typescript from "highlight.js/lib/languages/typescript"
@@ -39,7 +39,7 @@ interface CodeBlockProps {
   className?: string
 }
 
-export function CodeBlock({ code, language, className = "" }: CodeBlockProps) {
+export const CodeBlock = React.memo(function CodeBlock({ code, language, className = "" }: CodeBlockProps) {
   const codeRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
@@ -58,4 +58,4 @@ export function CodeBlock({ code, language, className = "" }: CodeBlockProps) {
       </code>
     </pre>
   )
-}
+})

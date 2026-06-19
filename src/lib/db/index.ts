@@ -119,4 +119,6 @@ ensureColumn("questions", "knowledge_point_id", "knowledge_point_id INTEGER REFE
 sqlite.exec(`
   CREATE INDEX IF NOT EXISTS idx_questions_subject_id ON questions(subject_id);
   CREATE INDEX IF NOT EXISTS idx_questions_knowledge_point_id ON questions(knowledge_point_id);
+  CREATE INDEX IF NOT EXISTS idx_questions_subject_type ON questions(subject_id, type);
+  CREATE INDEX IF NOT EXISTS idx_favorites_created_at ON favorites(created_at);
 `)

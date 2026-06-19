@@ -15,10 +15,7 @@ export async function GET() {
     return NextResponse.json({
       practice: practiceStats,
       questions: questionStats,
-      recentActivity: recentActivity.map(r => ({
-        ...r,
-        questionContent: r.questionContent?.substring(0, 80),
-      })),
+      recentActivity,
       dailyStats,
       wrongCount,
     })

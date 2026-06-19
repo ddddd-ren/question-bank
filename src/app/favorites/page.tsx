@@ -185,7 +185,7 @@ export default function FavoritesPage() {
       ) : (
         <div className="space-y-4">
           {favorites.map((item) => (
-            <Card key={item.id} className="card-hover">
+            <Card key={item.id} className="card-hover card-list-item">
               <CardContent className="p-4">
                 <div className="flex items-start gap-4">
                   <div className="p-2 rounded-lg bg-red-500/10">

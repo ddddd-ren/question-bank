@@ -1,5 +1,6 @@
 "use client"
 
+import React from "react"
 import { Badge } from "@/components/ui/badge"
 import { Eye, EyeOff } from "lucide-react"
 import { typeLabels, typeColors } from "@/lib/constants"
@@ -22,7 +23,7 @@ interface PracticeQuestionProps {
   onAnswer: (answer: string) => void
 }
 
-export function PracticeQuestion({
+export const PracticeQuestion = React.memo(function PracticeQuestion({
   question,
   showAnswer,
   onToggleAnswer,
@@ -152,4 +153,4 @@ export function PracticeQuestion({
       </div>
     </>
   )
-}
+})

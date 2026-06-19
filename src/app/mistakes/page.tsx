@@ -182,7 +182,7 @@ export default function MistakesPage() {
       ) : (
         <div className="space-y-4">
           {mistakes.map((mistake) => (
-            <Card key={mistake.id} className="card-hover">
+            <Card key={mistake.id} className="card-hover card-list-item">
               <CardContent className="p-4">
                 <div className="flex items-start gap-4">
                   <div className="p-2 rounded-lg bg-red-500/10">

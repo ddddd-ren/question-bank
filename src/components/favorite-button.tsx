@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import React, { useEffect, useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Heart, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -11,7 +11,7 @@ interface FavoriteButtonProps {
   className?: string
 }
 
-export function FavoriteButton({ questionId, className }: FavoriteButtonProps) {
+export const FavoriteButton = React.memo(function FavoriteButton({ questionId, className }: FavoriteButtonProps) {
   const [isFavorited, setIsFavorited] = useState(false)
   const [loading, setLoading] = useState(false)
   const [checking, setChecking] = useState(true)
@@ -82,4 +82,4 @@ export function FavoriteButton({ questionId, className }: FavoriteButtonProps) {
       )}
     </Button>
   )
-}
+})

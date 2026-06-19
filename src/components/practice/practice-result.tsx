@@ -1,5 +1,6 @@
 "use client"
 
+import React from "react"
 import { Button } from "@/components/ui/button"
 import { CheckCircle, XCircle, ChevronRight, ChevronLeft, Sparkles, Loader2, BookOpen, Flame, Brain } from "lucide-react"
 
@@ -17,7 +18,7 @@ interface PracticeResultProps {
   canPrev: boolean
 }
 
-export function PracticeResult({
+export const PracticeResult = React.memo(function PracticeResult({
   isCorrect,
   correctAnswer,
   streak,
@@ -121,4 +122,4 @@ export function PracticeResult({
       </div>
     </div>
   )
-}
+})

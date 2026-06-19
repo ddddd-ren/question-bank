@@ -257,6 +257,12 @@ body {
   will-change: background-position;
 }
 
+/* Virtualize long card lists for paint performance */
+.card-list-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
+}
+
 .page-header::after,
 .book-decoration::before,
 .option-btn::before {

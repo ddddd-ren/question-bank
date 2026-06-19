@@ -1,4 +1,4 @@
-﻿import { db, sqliteDb } from "."
+import { db, sqliteDb } from "."
 import {
   questions,
   categories,
@@ -342,10 +342,9 @@ export async function getRecentActivity(limit = 5) {
       id: practiceRecords.id,
       questionId: practiceRecords.questionId,
       isCorrect: practiceRecords.isCorrect,
-      userAnswer: practiceRecords.userAnswer,
       timeSpent: practiceRecords.timeSpent,
       createdAt: practiceRecords.createdAt,
-      questionContent: questions.content,
+      questionContent: sql<string>`substr(${questions.content}, 1, 80)`,
       questionType: questions.type,
     })
     .from(practiceRecords)

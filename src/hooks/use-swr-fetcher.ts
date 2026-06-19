@@ -39,6 +39,7 @@ export function useQuestions(filters: QuestionFilters = {}) {
   return useSWR(key, fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 2000,
+    keepPreviousData: true,
   })
 }
 

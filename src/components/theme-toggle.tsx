@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { Monitor, Moon, Sun } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -21,16 +21,17 @@ function applyTheme(theme: Theme) {
 export function ThemeToggle({ className }: { className?: string }) {
   const [theme, setTheme] = useState<Theme>("system")
   const [mounted, setMounted] = useState(false)
+  const initRef = useRef(false)
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setMounted(true)
-      const saved = localStorage.getItem("theme") as Theme | null
-      const nextTheme = saved || "system"
-      setTheme(nextTheme)
-      applyTheme(nextTheme)
-    }, 0)
-    return () => window.clearTimeout(timer)
+    if (initRef.current) return
+    initRef.current = true
+    const saved = localStorage.getItem("theme") as Theme | null
+    const nextTheme = saved || "system"
+    setTheme(nextTheme)
+    applyTheme(nextTheme)
+    // Defer mounted to next tick to avoid hydration mismatch
+    requestAnimationFrame(() => setMounted(true))
   }, [])
 
   useEffect(() => {
