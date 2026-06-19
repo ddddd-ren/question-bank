@@ -52,7 +52,16 @@ function parseOLE2(buffer: Buffer): Map<string, Buffer> {
 }
 
 function isBoilerplate(text: string): boolean {
-  return /版权所有|华德学院|数据科学与信息工程学院|方宏广|《Java程序设计》|___PPT|单击此处编辑母版/.test(text)
+  return /版权所有|华德学院|数据科学与信息工程学院|方宏广|《Java程序设计》|___PPT|单击此处编辑母版|第\*页|数据科学/.test(text)
+}
+
+function isQuestion(text: string): boolean {
+  if (/^(?:判断|对错|是否|正确|错误)[\s：:]/.test(text)) return true
+  if (/[A-D]\s*[、.．]/.test(text)) return true
+  if (/（\s*[）\s]/.test(text)) return true
+  if (/[？?]/.test(text) && text.length > 10) return true
+  if (text.length > 15 && /[，,]/.test(text)) return true
+  return false
 }
 
 export function extractOLE2Text(buffer: Buffer): string[] {
@@ -74,16 +83,16 @@ export function extractOLE2Text(buffer: Buffer): string[] {
     }
   }
 
-  const paragraphs: string[] = []
+  const blocks: string[] = []
   let current = ""
   for (const text of rawTexts) {
-    if (/[A-D]\s*[、.．]/.test(text) && current.length > 10) {
-      paragraphs.push(current.trim())
+    if (isQuestion(text) && current.length > 10) {
+      blocks.push(current.trim())
       current = ""
     }
     current += (current ? "\n" : "") + text
   }
-  if (current.trim().length > 10) paragraphs.push(current.trim())
+  if (current.trim().length > 10) blocks.push(current.trim())
 
-  return paragraphs
+  return blocks.map((block, i) => `${i + 1}. ${block}`)
 }
