@@ -1,5 +1,6 @@
 "use client"
 
+import React from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Sparkles, Loader2 } from "lucide-react"
 import ReactMarkdown from "react-markdown"
@@ -10,7 +11,7 @@ interface AiResponseCardProps {
   loading?: boolean
 }
 
-export function AiResponseCard({ response, loading }: AiResponseCardProps) {
+export const AiResponseCard = React.memo(function AiResponseCard({ response, loading }: AiResponseCardProps) {
   if (!response && !loading) return null
 
   return (
@@ -35,4 +36,4 @@ export function AiResponseCard({ response, loading }: AiResponseCardProps) {
       </CardContent>
     </Card>
   )
-}
+})

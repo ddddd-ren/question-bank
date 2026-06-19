@@ -84,11 +84,11 @@ export default function FavoritesPage() {
     }
   }, [fetchFavorites])
 
-  const clearFilters = () => {
+  const clearFilters = useCallback(() => {
     setSearch("")
     setTypeFilter("all")
     setPage(1)
-  }
+  }, [])
 
   if (loading) {
     return (

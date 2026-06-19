@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { X, CheckCircle, AlertCircle, Info } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -25,18 +25,31 @@ export function showToast(message: string, type: ToastType = "info") {
 
 export function ToastContainer() {
   const [toasts, setToasts] = useState<Toast[]>([])
+  const timersRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
+
+  const removeToast = useCallback((id: string) => {
+    const timer = timersRef.current.get(id)
+    if (timer) {
+      clearTimeout(timer)
+      timersRef.current.delete(id)
+    }
+    setToasts(prev => prev.filter(t => t.id !== id))
+  }, [])
 
   const addToast = useCallback((toast: Toast) => {
     setToasts(prev => [...prev, toast])
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== toast.id))
+    const timer = setTimeout(() => {
+      removeToast(toast.id)
     }, 3000)
-  }, [])
+    timersRef.current.set(toast.id, timer)
+  }, [removeToast])
 
   useEffect(() => {
     toastListeners.push(addToast)
+    const currentTimers = timersRef.current
     return () => {
       toastListeners = toastListeners.filter(l => l !== addToast)
+      currentTimers.forEach(timer => clearTimeout(timer))
     }
   }, [addToast])
 
@@ -69,7 +82,7 @@ export function ToastContainer() {
             <Icon className="h-4 w-4 flex-shrink-0" />
             <p className="text-sm flex-1">{toast.message}</p>
             <button
-              onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
+              onClick={() => removeToast(toast.id)}
               className="flex-shrink-0 hover:opacity-70"
             >
               <X className="h-4 w-4" />
