@@ -1,8 +1,13 @@
-﻿import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { getMistakes, deletePracticeRecord } from "@/lib/db/queries"
 import { parseJsonArray } from "@/lib/db/serialize"
 import { handleApiError } from "@/lib/api-error"
 import { parsePagination } from "@/lib/api-validate"
+import { z } from "zod"
+
+const DeleteRequestSchema = z.object({
+  id: z.number().int().positive(),
+})
 
 export async function GET(request: NextRequest) {
   try {
@@ -28,13 +33,9 @@ export async function GET(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const body = await request.json()
-    const { id } = body as { id: number }
+    const validated = DeleteRequestSchema.parse(body)
 
-    if (!id) {
-      return NextResponse.json({ error: "Missing id" }, { status: 400 })
-    }
-
-    await deletePracticeRecord(id)
+    await deletePracticeRecord(validated.id)
     return NextResponse.json({ success: true })
   } catch (error) {
     return handleApiError(error)
