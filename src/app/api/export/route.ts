@@ -53,6 +53,7 @@ export async function GET(request: NextRequest) {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
           "Content-Disposition": `attachment; filename=questions-export-${Date.now()}.csv`,
+          "Cache-Control": "private, no-cache",
         },
       })
     }
@@ -66,6 +67,7 @@ export async function GET(request: NextRequest) {
       headers: {
         "Content-Type": "application/json; charset=utf-8",
         "Content-Disposition": `attachment; filename=questions-export-${Date.now()}.json`,
+        "Cache-Control": "private, no-cache",
       },
     })
   } catch (error) {
