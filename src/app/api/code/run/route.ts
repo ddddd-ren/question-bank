@@ -1,7 +1,14 @@
-﻿import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { handleApiError } from "@/lib/api-error"
+import { z } from "zod"
 
 const PISTON_API = "https://emkc.org/api/v2/piston/execute"
+
+const CodeRunSchema = z.object({
+  code: z.string().min(1).max(50000),
+  language: z.string().max(50).optional().default("auto"),
+  stdin: z.string().max(10000).optional(),
+})
 
 const LANGUAGE_MAP: Record<string, { language: string; version: string }> = {
   "c": { language: "c", version: "10.2.0" },
@@ -66,12 +73,9 @@ function detectLanguage(code: string): string {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { code, stdin } = body as { code?: string; stdin?: string }
-    let { language } = body as { language?: string }
-
-    if (!code) {
-      return NextResponse.json({ error: "代码不能为空" }, { status: 400 })
-    }
+    const validated = CodeRunSchema.parse(body)
+    const { code, stdin } = validated
+    let language = validated.language
 
     if (!language || language === "auto") {
       language = detectLanguage(code)
