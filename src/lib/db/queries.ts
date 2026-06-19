@@ -100,34 +100,35 @@ export async function getRandomQuestions(options?: {
 }): Promise<Question[]> {
   const { type, categoryId, subjectId, knowledgePointId, count: limit = 10 } = options || {}
 
-  const whereConditions = []
-
+  const conditions = []
   if (type) {
-    whereConditions.push(eq(questions.type, type as QuestionType))
+    conditions.push(`type = '${type.replace(/'/g, "''")}'`)
   }
   if (categoryId) {
-    whereConditions.push(eq(questions.categoryId, categoryId))
+    conditions.push(`category_id = ${categoryId}`)
   }
   if (subjectId) {
-    whereConditions.push(eq(questions.subjectId, subjectId))
+    conditions.push(`subject_id = ${subjectId}`)
   }
   if (knowledgePointId) {
-    whereConditions.push(eq(questions.knowledgePointId, knowledgePointId))
+    conditions.push(`knowledge_point_id = ${knowledgePointId}`)
   }
 
-  const whereClause = whereConditions.length > 0 ? and(...whereConditions) : undefined
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : ""
 
-  return await db.query.questions.findMany({
-    where: whereClause,
-    orderBy: sql`RANDOM()`,
-    limit,
-  })
+  const rows = sqliteDb
+    .prepare(`SELECT * FROM questions ${whereClause} ORDER BY RANDOM() LIMIT ?`)
+    .all(limit) as Question[]
+
+  return rows
 }
 
+const questionByHashStmt = sqliteDb.prepare(
+  "SELECT * FROM questions WHERE content_hash = ?"
+)
+
 export async function getQuestionByHash(contentHash: string): Promise<Question | undefined> {
-  return await db.query.questions.findFirst({
-    where: eq(questions.contentHash, contentHash),
-  })
+  return questionByHashStmt.get(contentHash) as Question | undefined
 }
 
 export async function getQuestionsByHashes(hashes: string[]): Promise<Question[]> {
@@ -368,10 +369,12 @@ export async function getDailyStats(days = 7) {
 }
 
 // Favorites
+const favoriteByQuestionStmt = sqliteDb.prepare(
+  "SELECT * FROM favorites WHERE question_id = ?"
+)
+
 export async function getFavoriteByQuestionId(questionId: number) {
-  return await db.query.favorites.findFirst({
-    where: eq(favorites.questionId, questionId),
-  })
+  return favoriteByQuestionStmt.get(questionId) as { id: number; questionId: number; createdAt: string } | undefined
 }
 
 export async function toggleFavorite(questionId: number): Promise<boolean> {
@@ -485,28 +488,37 @@ export async function getWrongQuestions(options?: {
 }): Promise<Question[]> {
   const { type, count: limit = 20 } = options || {}
 
-  const conditions = [eq(practiceRecords.isCorrect, false)]
-  if (type && type !== "all" && isQuestionType(type)) {
-    conditions.push(eq(questions.type, type))
+  let query = `
+    SELECT q.* FROM questions q
+    INNER JOIN (
+      SELECT question_id, MAX(created_at) as latest
+      FROM practice_records
+      WHERE is_correct = 0
+      GROUP BY question_id
+      ORDER BY latest DESC
+      LIMIT ?
+    ) pr ON q.id = pr.question_id
+  `
+
+  const params: (string | number)[] = [limit]
+
+  if (type && type !== "all") {
+    query = `
+      SELECT q.* FROM questions q
+      INNER JOIN (
+        SELECT question_id, MAX(created_at) as latest
+        FROM practice_records
+        WHERE is_correct = 0
+        GROUP BY question_id
+        ORDER BY latest DESC
+      ) pr ON q.id = pr.question_id
+      WHERE q.type = ?
+      LIMIT ?
+    `
+    params.unshift(type)
   }
-  const whereClause = and(...conditions)
 
-  // Get distinct wrong question IDs, most recent first
-  const wrongIds = await db
-    .select({ questionId: practiceRecords.questionId })
-    .from(practiceRecords)
-    .leftJoin(questions, eq(practiceRecords.questionId, questions.id))
-    .where(whereClause)
-    .groupBy(practiceRecords.questionId)
-    .orderBy(desc(sql`max(${practiceRecords.createdAt})`))
-    .limit(limit)
-
-  const ids = wrongIds.map(r => r.questionId).filter((id): id is number => id !== null)
-  if (ids.length === 0) return []
-
-  return await db.query.questions.findMany({
-    where: inArray(questions.id, ids),
-  })
+  return sqliteDb.prepare(query).all(...params) as Question[]
 }
 
 const wrongQuestionCountStmt = sqliteDb.prepare(

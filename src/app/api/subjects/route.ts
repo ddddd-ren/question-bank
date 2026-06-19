@@ -1,19 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createSubject, getSubjects } from "@/lib/db/queries"
-import { ApiError, handleApiError } from "@/lib/api-error"
-import { requireBody } from "@/lib/api-validate"
+import { handleApiError } from "@/lib/api-error"
+import { z } from "zod"
 
-function normalizeSubjectBody(body: Record<string, unknown>) {
-  const name = typeof body.name === "string" ? body.name.trim() : ""
-  const code = typeof body.code === "string" ? body.code.trim() : ""
-  const description = typeof body.description === "string" ? body.description.trim() : ""
-
-  return {
-    name,
-    code: code || null,
-    description: description || null,
-  }
-}
+const SubjectSchema = z.object({
+  name: z.string().min(1).max(60).trim(),
+  code: z.string().max(20).trim().nullable().optional(),
+  description: z.string().max(500).trim().nullable().optional(),
+})
 
 export async function GET() {
   try {
@@ -26,15 +20,14 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as Record<string, unknown>
-    const data = normalizeSubjectBody(body)
-    requireBody(data, ["name"])
+    const body = await request.json()
+    const validated = SubjectSchema.parse(body)
 
-    if (data.name.length > 60) {
-      throw new ApiError(400, "学科名称不能超过 60 个字符")
-    }
-
-    const subject = await createSubject(data)
+    const subject = await createSubject({
+      name: validated.name,
+      code: validated.code || null,
+      description: validated.description || null,
+    })
     return NextResponse.json(subject)
   } catch (error) {
     return handleApiError(error)

@@ -1,23 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createKnowledgePoint, getKnowledgePointById, getKnowledgePoints, getSubjectById } from "@/lib/db/queries"
 import { ApiError, handleApiError } from "@/lib/api-error"
-import { parseOptionalNumber, requireBody } from "@/lib/api-validate"
+import { parseOptionalNumber } from "@/lib/api-validate"
+import { z } from "zod"
 
-function normalizeKnowledgePointBody(body: Record<string, unknown>) {
-  const name = typeof body.name === "string" ? body.name.trim() : ""
-  const description = typeof body.description === "string" ? body.description.trim() : ""
-  const subjectId = Number(body.subjectId)
-  const parentId = body.parentId === null || body.parentId === undefined || body.parentId === ""
-    ? null
-    : Number(body.parentId)
-
-  return {
-    subjectId,
-    name,
-    parentId,
-    description: description || null,
-  }
-}
+const KnowledgePointSchema = z.object({
+  name: z.string().min(1).max(80).trim(),
+  description: z.string().max(500).trim().nullable().optional(),
+  subjectId: z.number().int().positive(),
+  parentId: z.number().int().positive().nullable().optional(),
+})
 
 export async function GET(request: NextRequest) {
   try {
@@ -32,38 +24,30 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as Record<string, unknown>
-    const data = normalizeKnowledgePointBody(body)
-    requireBody(data, ["subjectId", "name"])
+    const body = await request.json()
+    const validated = KnowledgePointSchema.parse(body)
 
-    if (!Number.isInteger(data.subjectId) || data.subjectId <= 0) {
-      throw new ApiError(400, "无效的学科 ID")
-    }
-
-    if (data.name.length > 80) {
-      throw new ApiError(400, "知识点名称不能超过 80 个字符")
-    }
-
-    if (data.parentId !== null && (!Number.isInteger(data.parentId) || data.parentId <= 0)) {
-      throw new ApiError(400, "无效的父级知识点")
-    }
-
-    const subject = await getSubjectById(data.subjectId)
+    const subject = await getSubjectById(validated.subjectId)
     if (!subject) {
       return NextResponse.json({ error: "学科不存在" }, { status: 404 })
     }
 
-    if (data.parentId !== null) {
-      const parent = await getKnowledgePointById(data.parentId)
+    if (validated.parentId !== null && validated.parentId !== undefined) {
+      const parent = await getKnowledgePointById(validated.parentId)
       if (!parent) {
         return NextResponse.json({ error: "父级知识点不存在" }, { status: 404 })
       }
-      if (parent.subjectId !== data.subjectId) {
+      if (parent.subjectId !== validated.subjectId) {
         throw new ApiError(400, "父级知识点必须属于同一学科")
       }
     }
 
-    const knowledgePoint = await createKnowledgePoint(data)
+    const knowledgePoint = await createKnowledgePoint({
+      name: validated.name,
+      description: validated.description || null,
+      subjectId: validated.subjectId,
+      parentId: validated.parentId || null,
+    })
     return NextResponse.json(knowledgePoint)
   } catch (error) {
     return handleApiError(error)

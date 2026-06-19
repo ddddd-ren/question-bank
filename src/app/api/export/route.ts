@@ -2,46 +2,70 @@ import { NextRequest, NextResponse } from "next/server"
 import { getQuestions } from "@/lib/db/queries"
 import { serializeQuestions } from "@/lib/db/serialize"
 import { handleApiError } from "@/lib/api-error"
+import { z } from "zod"
+
+const ExportQuerySchema = z.object({
+  format: z.enum(["json", "csv"]).default("json"),
+  pageSize: z.coerce.number().int().min(1).max(50000).default(10000),
+  type: z.string().optional(),
+  categoryId: z.coerce.number().int().positive().optional(),
+  subjectId: z.coerce.number().int().positive().optional(),
+})
+
+function escapeCsvField(field: string): string {
+  if (field.includes(",") || field.includes('"') || field.includes("\n")) {
+    return `"${field.replace(/"/g, '""')}"`
+  }
+  return field
+}
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const format = searchParams.get("format") || "json"
+    const query = ExportQuerySchema.parse(Object.fromEntries(searchParams.entries()))
 
-    // Fetch all questions (up to 10000)
-    const result = await getQuestions({ pageSize: 10000 })
+    const result = await getQuestions({
+      pageSize: query.pageSize,
+      type: query.type,
+      categoryId: query.categoryId,
+      subjectId: query.subjectId,
+    })
     const questions = serializeQuestions(result.data)
 
-    if (format === "csv") {
+    if (query.format === "csv") {
       const headers = ["id", "type", "content", "options", "answer", "explanation", "difficulty", "tags", "createdAt"]
       const csvLines = [headers.join(",")]
       for (const q of questions) {
         const row = [
           q.id,
-          q.type,
-          JSON.stringify(q.content || ""),
-          JSON.stringify((q.options || []).join("|")),
-          JSON.stringify(q.answer || ""),
-          JSON.stringify(q.explanation || ""),
+          escapeCsvField(q.type),
+          escapeCsvField(q.content || ""),
+          escapeCsvField((q.options || []).join("|")),
+          escapeCsvField(q.answer || ""),
+          escapeCsvField(q.explanation || ""),
           q.difficulty || 1,
-          JSON.stringify((q.tags || []).join("|")),
-          q.createdAt || "",
+          escapeCsvField((q.tags || []).join("|")),
+          escapeCsvField(q.createdAt || ""),
         ]
         csvLines.push(row.join(","))
       }
-      return new NextResponse(csvLines.join("\n"), {
+      return new NextResponse("\uFEFF" + csvLines.join("\n"), {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
-          "Content-Disposition": "attachment; filename=question-bank-export.csv",
+          "Content-Disposition": `attachment; filename=questions-export-${Date.now()}.csv`,
         },
       })
     }
 
-    // JSON format
-    return new NextResponse(JSON.stringify({ version: "1.0", exportedAt: new Date().toISOString(), total: questions.length, questions }, null, 2), {
+    return new NextResponse(JSON.stringify({
+      version: "1.0",
+      exportedAt: new Date().toISOString(),
+      total: questions.length,
+      questions,
+    }, null, 2), {
       headers: {
         "Content-Type": "application/json; charset=utf-8",
-        "Content-Disposition": "attachment; filename=question-bank-export.json",
+        "Content-Disposition": `attachment; filename=questions-export-${Date.now()}.json`,
       },
     })
   } catch (error) {
