@@ -284,14 +284,16 @@ export async function createPracticeRecord(data: NewPracticeRecord): Promise<Pra
   return result
 }
 
+const practiceStatsStmt = sqliteDb.prepare(
+  "SELECT count(*) AS total, sum(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) AS correct FROM practice_records"
+)
+
 export async function getPracticeStats(): Promise<{
   total: number
   correct: number
   accuracy: number
 }> {
-  const result = sqliteDb
-    .prepare("SELECT count(*) AS total, sum(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) AS correct FROM practice_records")
-    .get() as { total: number; correct: number | null }
+  const result = practiceStatsStmt.get() as { total: number; correct: number | null }
 
   const total = result.total
   const correct = result.correct || 0
@@ -316,17 +318,13 @@ export async function setAiCache(questionId: number, model: string, response: st
 
 // Stats
 export async function getQuestionStats() {
-  const totalResult = sqliteDb
-    .prepare("SELECT count(*) AS count FROM questions")
-    .get() as { count: number }
+  const totalStmt = sqliteDb.prepare("SELECT count(*) AS count FROM questions")
+  const typeStmt = sqliteDb.prepare("SELECT type, count(*) AS count FROM questions GROUP BY type")
+  const categoryStmt = sqliteDb.prepare("SELECT count(*) AS count FROM categories")
 
-  const typeStats = sqliteDb
-    .prepare("SELECT type, count(*) AS count FROM questions GROUP BY type")
-    .all() as { type: QuestionType; count: number }[]
-
-  const categoryCount = sqliteDb
-    .prepare("SELECT count(*) AS count FROM categories")
-    .get() as { count: number }
+  const totalResult = totalStmt.get() as { count: number }
+  const typeStats = typeStmt.all() as { type: QuestionType; count: number }[]
+  const categoryCount = categoryStmt.get() as { count: number }
 
   return {
     total: totalResult.count,
@@ -511,9 +509,11 @@ export async function getWrongQuestions(options?: {
   })
 }
 
+const wrongQuestionCountStmt = sqliteDb.prepare(
+  "SELECT count(DISTINCT question_id) AS count FROM practice_records WHERE is_correct = 0"
+)
+
 export async function getWrongQuestionCount(): Promise<number> {
-  const result = sqliteDb
-    .prepare("SELECT count(DISTINCT question_id) AS count FROM practice_records WHERE is_correct = 0")
-    .get() as { count: number }
+  const result = wrongQuestionCountStmt.get() as { count: number }
   return result.count
 }

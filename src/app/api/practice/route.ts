@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getRandomQuestions, getWrongQuestions, createPracticeRecord, getPracticeStats } from "@/lib/db/queries"
 import { serializeQuestions } from "@/lib/db/serialize"
 import { handleApiError } from "@/lib/api-error"
+import { PracticeSubmitSchema, validateBody } from "@/lib/api-validate"
 import { parseOptionalNumber, parseOptionalString } from "@/lib/api-validate"
 
 export async function GET(request: NextRequest) {
@@ -18,7 +19,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(statsData)
     }
 
-    // Mistake re-practice mode
     if (mode === "mistakes") {
       const questions = await getWrongQuestions({ type: type || undefined, count })
       return NextResponse.json({
@@ -40,7 +40,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const record = await createPracticeRecord(body)
+    const validated = validateBody(PracticeSubmitSchema, body)
+    const record = await createPracticeRecord(validated)
     return NextResponse.json(record)
   } catch (error) {
     return handleApiError(error)

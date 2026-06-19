@@ -107,9 +107,11 @@ sqlite.exec(`
 `)
 
 function ensureColumn(table: string, column: string, definition: string) {
-  const columns = sqlite.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
-  if (!columns.some((item) => item.name === column)) {
-    sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`)
+  const safeTable = table.replace(/[^a-zA-Z0-9_]/g, '')
+  const safeColumn = column.replace(/[^a-zA-Z0-9_]/g, '')
+  const columns = sqlite.prepare(`PRAGMA table_info(${safeTable})`).all() as { name: string }[]
+  if (!columns.some((item) => item.name === safeColumn)) {
+    sqlite.exec(`ALTER TABLE ${safeTable} ADD COLUMN ${definition}`)
   }
 }
 
