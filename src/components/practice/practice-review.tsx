@@ -1,5 +1,6 @@
 "use client"
 
+import React from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { RotateCcw, XCircle, Clock, Flame } from "lucide-react"
@@ -20,7 +21,7 @@ interface PracticeReviewProps {
   onJumpToQuestion: (questionId: number) => void
 }
 
-export function PracticeReview({
+export const PracticeReview = React.memo(function PracticeReview({
   records,
   totalCorrect,
   onRestart,
@@ -156,4 +157,4 @@ export function PracticeReview({
       </div>
     </div>
   )
-}
+})
