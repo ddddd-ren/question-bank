@@ -1,8 +1,9 @@
 "use client"
 
+import React from "react"
 import { Keyboard } from "lucide-react"
 
-export function KeyboardHints() {
+export const KeyboardHints = React.memo(function KeyboardHints() {
   return (
     <div className="flex items-center gap-4 text-xs text-muted-foreground">
       <div className="flex items-center gap-1">
@@ -15,4 +16,4 @@ export function KeyboardHints() {
       </div>
     </div>
   )
-}
+})
