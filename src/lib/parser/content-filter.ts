@@ -1,4 +1,4 @@
-﻿export interface FilterResult {
+export interface FilterResult {
   filter: boolean
   reason?: string
   category?: 'meta' | 'section' | 'answer_area' | 'uncertain'
@@ -28,6 +28,12 @@ const answerAreaPatterns: { pattern: RegExp; reason: string }[] = [
   { pattern: /^[A-D]{1,4}\s*$/, reason: '答案内容' },
   { pattern: /^(?:正确答案|正确选项)[：:]\s*[A-D]/, reason: '答案标记' },
   { pattern: /^(?:解析|解题思路|考点分析)[：:]/, reason: '解析内容' },
+]
+
+// Term definition patterns (auto-filter - 名词解释)
+const termDefinitionPatterns: { pattern: RegExp; reason: string }[] = [
+  { pattern: /^[\u4e00-\u9fff]{2,8}[：:][\u4e00-\u9fff]/, reason: '名词解释' },
+  { pattern: /^(?:数据|数据库|主属性|外键|事务|实体|关系|SQL|索引|视图|触发器|存储过程|范式|主码|候选码|超码|元组|属性|域|模式|内模式|外模式|DDL|DML|DCL)[：:]/, reason: '术语定义' },
 ]
 
 // Strict question number patterns for HTML
@@ -74,6 +80,12 @@ export function shouldFilterContent(text: string): FilterResult {
   for (const { pattern, reason } of answerAreaPatterns) {
     if (pattern.test(trimmed)) {
       return { filter: true, reason, category: 'answer_area' }
+    }
+  }
+
+  for (const { pattern, reason } of termDefinitionPatterns) {
+    if (pattern.test(trimmed)) {
+      return { filter: true, reason, category: 'meta' }
     }
   }
 

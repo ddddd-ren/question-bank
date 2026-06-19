@@ -1,4 +1,4 @@
-﻿import mammoth from "mammoth"
+import mammoth from "mammoth"
 import crypto from "crypto"
 import JSZip from "jszip"
 import { normalizeChoiceAnswer } from "./choice-answer"
@@ -184,20 +184,29 @@ function extractUtf16Runs(buffer: Buffer): string[] {
     if (isReadableChar(code)) {
       current += String.fromCharCode(code)
     } else {
-      if (current.trim().length >= 6) runs.push(current)
+      if (current.trim().length >= 2) runs.push(current)
       current = ""
     }
   }
 
-  if (current.trim().length >= 6) runs.push(current)
+  if (current.trim().length >= 2) runs.push(current)
   return runs
+}
+
+function isGarbageText(text: string): boolean {
+  const compact = text.replace(/\s+/g, "")
+  if (compact.length < 3) return true
+  if (/^[^\u4e00-\u9fff\u3000-\u303ff0-9A-Za-z]{3,}$/.test(compact)) return true
+  const chineseRatio = (compact.match(/[\u4e00-\u9fff]/g) || []).length / compact.length
+  if (compact.length > 5 && chineseRatio < 0.1 && !/[A-Za-z]{3,}/.test(compact)) return true
+  return false
 }
 
 function extractLegacyPowerPointParagraphs(buffer: Buffer): string[] {
   const paragraphs: string[] = []
   const seen = new Set<string>()
   const maxRecordLength = 1024 * 256
-  const textRecordTypes = new Set([4000, 4008, 4026])
+  const textRecordTypes = new Set([4000, 4008, 4026, 4011, 4012])
 
   for (let offset = 0; offset + 8 <= buffer.length; offset += 1) {
     const recordType = buffer.readUInt16LE(offset + 2)
@@ -213,12 +222,26 @@ function extractLegacyPowerPointParagraphs(buffer: Buffer): string[] {
       ? payload.toString("latin1")
       : payload.toString("utf16le")
 
-    pushUniqueParagraph(paragraphs, seen, text)
+    const lines = normalizePowerPointText(text).split(/\n+/).filter(l => l.trim().length >= 3 && !isGarbageText(l.trim()))
+    for (const line of lines) {
+      const key = line.replace(/\s+/g, "")
+      if (!seen.has(key)) {
+        seen.add(key)
+        paragraphs.push(line.trim())
+      }
+    }
   }
 
   if (paragraphs.length === 0) {
     for (const text of extractUtf16Runs(buffer)) {
-      pushUniqueParagraph(paragraphs, seen, text)
+      const lines = normalizePowerPointText(text).split(/\n+/).filter(l => l.trim().length >= 3 && !isGarbageText(l.trim()))
+      for (const line of lines) {
+        const key = line.replace(/\s+/g, "")
+        if (!seen.has(key)) {
+          seen.add(key)
+          paragraphs.push(line.trim())
+        }
+      }
     }
   }
 
@@ -884,7 +907,12 @@ export async function parsePowerPointBuffer(buffer: Buffer): Promise<ExtractedQu
       paragraphs.push(...extractPowerPointParagraphs(slideXml))
     }
   } catch {
-    paragraphs.push(...extractLegacyPowerPointParagraphs(buffer))
+    const { extractOLE2Text } = await import("./ole2-parser")
+    paragraphs.push(...extractOLE2Text(buffer))
+
+    if (paragraphs.length === 0) {
+      paragraphs.push(...extractLegacyPowerPointParagraphs(buffer))
+    }
   }
 
   if (paragraphs.length === 0) {
