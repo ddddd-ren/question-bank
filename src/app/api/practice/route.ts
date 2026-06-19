@@ -24,6 +24,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         data: serializeQuestions(questions),
         mode: "mistakes",
+      }, {
+        headers: {
+          "Cache-Control": "private, no-cache",
+        },
       })
     }
 
