@@ -23,11 +23,19 @@ export async function GET(request: NextRequest) {
         throw new ApiError(400, "无效的题目ID")
       }
       const favorite = await getFavoriteByQuestionId(numId)
-      return NextResponse.json({ isFavorited: !!favorite })
+      return NextResponse.json({ isFavorited: !!favorite }, {
+        headers: {
+          "Cache-Control": "private, max-age=10, stale-while-revalidate=5",
+        },
+      })
     }
 
     const result = await getFavorites({ type: typeFilter || undefined, search: searchQuery || undefined, page, pageSize })
-    return NextResponse.json(result)
+    return NextResponse.json(result, {
+      headers: {
+        "Cache-Control": "private, max-age=30, stale-while-revalidate=15",
+      },
+    })
   } catch (error) {
     return handleApiError(error)
   }
