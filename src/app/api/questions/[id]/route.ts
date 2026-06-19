@@ -34,7 +34,11 @@ export async function GET(
       return NextResponse.json({ error: "题目不存在" }, { status: 404 })
     }
 
-    return NextResponse.json(serializeQuestion(question))
+    return NextResponse.json(serializeQuestion(question), {
+      headers: {
+        "Cache-Control": "private, max-age=60, stale-while-revalidate=30",
+      },
+    })
   } catch (error) {
     return handleApiError(error)
   }
