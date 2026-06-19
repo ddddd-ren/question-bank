@@ -71,11 +71,11 @@ export default function MistakesPage() {
     return () => window.clearTimeout(timer)
   }, [fetchMistakes])
 
-  const clearFilters = () => {
+  const clearFilters = useCallback(() => {
     setSearch("")
     setTypeFilter("all")
     setPage(1)
-  }
+  }, [])
 
   if (loading) {
     return (
