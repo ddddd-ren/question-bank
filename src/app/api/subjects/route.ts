@@ -12,7 +12,11 @@ const SubjectSchema = z.object({
 export async function GET() {
   try {
     const subjects = await getSubjects()
-    return NextResponse.json(subjects)
+    return NextResponse.json(subjects, {
+      headers: {
+        "Cache-Control": "private, max-age=30, stale-while-revalidate=15",
+      },
+    })
   } catch (error) {
     return handleApiError(error)
   }

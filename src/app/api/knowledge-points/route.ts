@@ -16,7 +16,11 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const subjectId = parseOptionalNumber(searchParams.get("subjectId"))
     const knowledgePoints = await getKnowledgePoints({ subjectId })
-    return NextResponse.json(knowledgePoints)
+    return NextResponse.json(knowledgePoints, {
+      headers: {
+        "Cache-Control": "private, max-age=30, stale-while-revalidate=15",
+      },
+    })
   } catch (error) {
     return handleApiError(error)
   }

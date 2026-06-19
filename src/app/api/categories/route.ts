@@ -11,7 +11,11 @@ const CategorySchema = z.object({
 export async function GET() {
   try {
     const categories = await getCategories()
-    return NextResponse.json(categories)
+    return NextResponse.json(categories, {
+      headers: {
+        "Cache-Control": "private, max-age=30, stale-while-revalidate=15",
+      },
+    })
   } catch (error) {
     return handleApiError(error)
   }
