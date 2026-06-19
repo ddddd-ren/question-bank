@@ -3,17 +3,24 @@ import OpenAI from "openai"
 import { getAiCache, setAiCache } from "@/lib/db/queries"
 import { getActiveProvider } from "@/lib/ai/config"
 import { getErrorMessage } from "@/lib/utils"
+import { z } from "zod"
+
+const ExplainRequestSchema = z.object({
+  questionId: z.number().int().positive().optional(),
+  question: z.string().min(1).max(10000),
+  options: z.array(z.string().max(1000)).max(20).optional(),
+  answer: z.string().max(5000).nullable().optional(),
+  type: z.enum(["single", "multiple", "truefalse", "fill", "calculation", "essay", "code"]).optional(),
+  mode: z.enum(["review"]).optional(),
+  userAnswer: z.string().max(5000).optional(),
+})
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { questionId, question: questionText, options, answer, type, mode, userAnswer } = body
+    const validated = ExplainRequestSchema.parse(body)
+    const { questionId, question: questionText, options, answer, type, mode, userAnswer } = validated
 
-    if (!questionText) {
-      return NextResponse.json({ error: "Question text required" }, { status: 400 })
-    }
-
-    // 获取当前激活的AI配置
     const provider = getActiveProvider()
     if (!provider) {
       return NextResponse.json({ error: "未配置AI服务，请在设置中配置" }, { status: 400 })
@@ -25,7 +32,6 @@ export async function POST(request: NextRequest) {
 
     const model = provider.model
 
-    // Check cache first
     if (questionId) {
       const cached = await getAiCache(questionId, model)
       if (cached) {
@@ -33,12 +39,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Build prompt based on question type
     let systemPrompt = "你是一个专业的教育辅导助手。请清晰、准确地解答题目，并给出详细的解题思路。"
 
-  if (mode === "review") {
-    systemPrompt = "你是一个专业的学习复盘助手。用户答错了这道题，请分析错误原因、归纳关键知识点、并给出同类题的学习方向。请用简洁的中文回答。"
-  }
+    if (mode === "review") {
+      systemPrompt = "你是一个专业的学习复盘助手。用户答错了这道题，请分析错误原因、归纳关键知识点、并给出同类题的学习方向。请用简洁的中文回答。"
+    }
     let userPrompt = ""
 
     switch (type) {
@@ -70,13 +75,11 @@ export async function POST(request: NextRequest) {
           : `题目：${questionText}\n请详细解答：`
     }
 
-    // Create OpenAI client with provider config
     const openai = new OpenAI({
       baseURL: provider.baseUrl,
       apiKey: provider.apiKey,
     })
 
-    // Call LLM with streaming
     const stream = await openai.chat.completions.create({
       model,
       messages: [
@@ -87,7 +90,6 @@ export async function POST(request: NextRequest) {
       max_tokens: provider.maxTokens || 2000,
     })
 
-    // Return streaming response
     const encoder = new TextEncoder()
     const readable = new ReadableStream({
       async start(controller) {
@@ -101,7 +103,6 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // Cache the response
           if (questionId && fullResponse) {
             await setAiCache(questionId, model, fullResponse)
           }
