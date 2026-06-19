@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { handleApiError } from "@/lib/api-error"
 
 const JSON_TEMPLATE = {
@@ -71,7 +71,8 @@ export async function GET(request: NextRequest) {
       return new NextResponse(csvLines.join("\n"), {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
-          "Content-Disposition": "attachment; filename=question-template.csv"
+          "Content-Disposition": "attachment; filename=question-template.csv",
+          "Cache-Control": "public, max-age=3600",
         }
       })
     }
@@ -79,7 +80,8 @@ export async function GET(request: NextRequest) {
     return new NextResponse(JSON.stringify(JSON_TEMPLATE, null, 2), {
       headers: {
         "Content-Type": "application/json; charset=utf-8",
-        "Content-Disposition": "attachment; filename=question-template.json"
+        "Content-Disposition": "attachment; filename=question-template.json",
+        "Cache-Control": "public, max-age=3600",
       }
     })
   } catch (error) {
