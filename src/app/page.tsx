@@ -1,9 +1,10 @@
 "use client"
 
 import Link from "next/link"
-import { AlertTriangle, ArrowRight, BookOpen, CheckCircle2, Clock, Flame, PenTool, RefreshCw, Target, XCircle } from "lucide-react"
+import { AlertTriangle, ArrowRight, BookOpen, CheckCircle2, Clock, Flame, Layers, PenTool, RefreshCw, Target, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import { typeLabels } from "@/lib/constants"
 import { useDashboard } from "@/hooks/use-swr-fetcher"
 
@@ -54,6 +55,8 @@ export default function Dashboard() {
   const practiceStats = data?.practice
   const recentActivity = data?.recentActivity || []
   const wrongCount = data?.wrongCount || 0
+  const subjectStats = data?.subjectStats || []
+  const difficultyStats = data?.difficultyStats || []
 
   const statCards = [
     { title: "题目总数", value: stats?.total || 0, icon: BookOpen, color: "text-primary", bgColor: "bg-primary/10" },
@@ -61,6 +64,22 @@ export default function Dashboard() {
     { title: "正确率", value: `${practiceStats?.accuracy || 0}%`, icon: Target, color: "text-amber-600", bgColor: "bg-amber-500/10" },
     { title: "待复盘错题", value: wrongCount, icon: XCircle, color: "text-red-600", bgColor: "bg-red-500/10" },
   ]
+
+  const difficultyLabels: Record<number, string> = {
+    1: "简单",
+    2: "较易",
+    3: "中等",
+    4: "较难",
+    5: "困难",
+  }
+
+  const difficultyColors: Record<number, string> = {
+    1: "bg-green-500",
+    2: "bg-lime-500",
+    3: "bg-yellow-500",
+    4: "bg-orange-500",
+    5: "bg-red-500",
+  }
 
   return (
     <div className="space-y-8">
@@ -165,7 +184,58 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-slide-up" style={{ animationDelay: "600ms" }}>
+      {/* Subject Stats */}
+      {subjectStats.length > 0 && (
+        <Card className="animate-slide-up" style={{ animationDelay: "600ms" }}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Layers className="h-5 w-5 text-primary" />
+              学科统计
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {subjectStats.slice(0, 6).map((subject: { id: number; name: string; code: string | null; questionCount: number }) => (
+                <div key={subject.id} className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-medium">{subject.name}</span>
+                    {subject.code && <Badge variant="outline" className="text-xs">{subject.code}</Badge>}
+                  </div>
+                  <Badge variant="secondary">{subject.questionCount} 题</Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Difficulty Distribution */}
+      {difficultyStats.length > 0 && (
+        <Card className="animate-slide-up" style={{ animationDelay: "700ms" }}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Target className="h-5 w-5 text-primary" />
+              难度分布
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-5 gap-3">
+              {difficultyStats.map((item: { difficulty: number; count: number }) => (
+                <div key={item.difficulty} className="text-center p-3 rounded-lg border bg-card">
+                  <div className={`w-8 h-8 rounded-full ${difficultyColors[item.difficulty] || "bg-gray-500"} mx-auto mb-2 flex items-center justify-center`}>
+                    <span className="text-white text-xs font-bold">{item.difficulty}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{difficultyLabels[item.difficulty] || `等级${item.difficulty}`}</p>
+                  <p className="text-lg font-bold mt-1">{item.count}</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-slide-up" style={{ animationDelay: "800ms" }}>
         <Link href="/import">
           <div className="group p-4 rounded-lg border border-dashed hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer text-center">
             <p className="font-medium">导入题目</p>

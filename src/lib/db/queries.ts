@@ -529,3 +529,61 @@ export async function getWrongQuestionCount(): Promise<number> {
   const result = wrongQuestionCountStmt.get() as { count: number }
   return result.count
 }
+
+export async function getSubjectStats() {
+  return sqliteDb.prepare(`
+    SELECT 
+      s.id,
+      s.name,
+      s.code,
+      count(q.id) AS questionCount,
+      sum(CASE WHEN q.answer IS NOT NULL AND q.answer != '' THEN 1 ELSE 0 END) AS withAnswer
+    FROM subjects s
+    LEFT JOIN questions q ON q.subject_id = s.id
+    GROUP BY s.id, s.name, s.code
+    ORDER BY questionCount DESC
+  `).all() as { id: number; name: string; code: string | null; questionCount: number; withAnswer: number }[]
+}
+
+export async function getKnowledgePointStats() {
+  return sqliteDb.prepare(`
+    SELECT 
+      kp.id,
+      kp.name,
+      kp.subject_id AS subjectId,
+      s.name AS subjectName,
+      count(q.id) AS questionCount
+    FROM knowledge_points kp
+    LEFT JOIN questions q ON q.knowledge_point_id = kp.id
+    LEFT JOIN subjects s ON s.id = kp.subject_id
+    GROUP BY kp.id, kp.name, kp.subject_id, s.name
+    ORDER BY questionCount DESC
+    LIMIT 20
+  `).all() as { id: number; name: string; subjectId: number; subjectName: string; questionCount: number }[]
+}
+
+export async function getDifficultyStats() {
+  return sqliteDb.prepare(`
+    SELECT 
+      difficulty,
+      count(*) AS count,
+      sum(CASE WHEN answer IS NOT NULL AND answer != '' THEN 1 ELSE 0 END) AS withAnswer
+    FROM questions
+    GROUP BY difficulty
+    ORDER BY difficulty
+  `).all() as { difficulty: number; count: number; withAnswer: number }[]
+}
+
+export async function getPracticeTrend(days = 30) {
+  return sqliteDb.prepare(`
+    SELECT 
+      date(created_at) AS date,
+      count(*) AS total,
+      sum(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) AS correct,
+      round(avg(time_spent), 0) AS avgTime
+    FROM practice_records
+    WHERE created_at >= datetime('now', ?)
+    GROUP BY date(created_at)
+    ORDER BY date(created_at)
+  `).all(`-${days} days`) as { date: string; total: number; correct: number | null; avgTime: number | null }[]
+}
