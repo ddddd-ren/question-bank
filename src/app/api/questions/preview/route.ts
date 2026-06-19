@@ -1,11 +1,44 @@
-﻿import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { parsePdfBuffer, parsePowerPointBuffer, parseWordBuffer } from "@/lib/parser"
 import { parseJsonQuestions } from "@/lib/parser/json-parser"
 import { applyTemplate, toEditable, fromEditable, renderPreview } from "@/lib/parser/question-templates"
 import { handleApiError, ApiError } from "@/lib/api-error"
 import { checkQuestionQuality, generateQualityReport } from "@/lib/parser/quality-checker"
 import { isQuestionType } from "@/lib/types"
-import type { EditableQuestion } from "@/lib/parser/question-templates"
+import { z } from "zod"
+
+const PatchRequestSchema = z.object({
+  question: z.object({
+    type: z.enum(["single", "multiple", "truefalse", "fill", "calculation", "essay", "code"]),
+    stem: z.string(),
+    options: z.array(z.string()).optional(),
+    answer: z.string().optional(),
+    explanation: z.string().optional(),
+    blankSlots: z.array(z.object({
+      index: z.number(),
+      label: z.string(),
+      answer: z.string(),
+    })).optional(),
+  }),
+  targetType: z.string(),
+  index: z.number().int().min(0).optional().default(0),
+})
+
+const PutRequestSchema = z.object({
+  questions: z.array(z.object({
+    type: z.enum(["single", "multiple", "truefalse", "fill", "calculation", "essay", "code"]),
+    stem: z.string(),
+    options: z.array(z.string()).optional(),
+    answer: z.string().optional(),
+    explanation: z.string().optional(),
+    blankSlots: z.array(z.object({
+      index: z.number(),
+      label: z.string(),
+      answer: z.string(),
+    })).optional(),
+  })).min(1).max(10000),
+  sourceFile: z.string().max(500).optional(),
+})
 
 // Parse CSV content
 function parseCsvQuestions(csvContent: string) {
@@ -103,16 +136,10 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { question, targetType, index = 0 } = body as {
-      question?: EditableQuestion
-      targetType?: string
-      index?: number
-    }
+    const validated = PatchRequestSchema.parse(body)
+    const { question, targetType, index } = validated
 
-    if (!question) {
-      throw new ApiError(400, "缺少题目数据")
-    }
-    if (!targetType || !isQuestionType(targetType)) {
+    if (!isQuestionType(targetType)) {
       throw new ApiError(400, "无效的题型模板")
     }
 
@@ -141,14 +168,8 @@ export async function PATCH(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { questions, sourceFile } = body as {
-      questions: EditableQuestion[]
-      sourceFile?: string
-    }
-
-    if (!questions || !Array.isArray(questions) || questions.length === 0) {
-      throw new ApiError(400, "No question data")
-    }
+    const validated = PutRequestSchema.parse(body)
+    const { questions, sourceFile } = validated
 
     const crypto = await import("crypto")
     const { createQuestionsBatch, getQuestionsByHashes } = await import("@/lib/db/queries")
