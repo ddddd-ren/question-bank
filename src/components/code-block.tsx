@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useRef } from "react"
+import React, { useEffect, useRef, useMemo } from "react"
 import hljs from "highlight.js/lib/core"
 import javascript from "highlight.js/lib/languages/javascript"
 import typescript from "highlight.js/lib/languages/typescript"
@@ -17,21 +17,26 @@ import xml from "highlight.js/lib/languages/xml"
 import css from "highlight.js/lib/languages/css"
 import json from "highlight.js/lib/languages/json"
 
-// Register languages
-hljs.registerLanguage("javascript", javascript)
-hljs.registerLanguage("typescript", typescript)
-hljs.registerLanguage("python", python)
-hljs.registerLanguage("java", java)
-hljs.registerLanguage("cpp", cpp)
-hljs.registerLanguage("c", c)
-hljs.registerLanguage("csharp", csharp)
-hljs.registerLanguage("go", go)
-hljs.registerLanguage("rust", rust)
-hljs.registerLanguage("sql", sql)
-hljs.registerLanguage("bash", bash)
-hljs.registerLanguage("xml", xml)
-hljs.registerLanguage("css", css)
-hljs.registerLanguage("json", json)
+let languagesRegistered = false
+
+function ensureLanguagesRegistered() {
+  if (languagesRegistered) return
+  hljs.registerLanguage("javascript", javascript)
+  hljs.registerLanguage("typescript", typescript)
+  hljs.registerLanguage("python", python)
+  hljs.registerLanguage("java", java)
+  hljs.registerLanguage("cpp", cpp)
+  hljs.registerLanguage("c", c)
+  hljs.registerLanguage("csharp", csharp)
+  hljs.registerLanguage("go", go)
+  hljs.registerLanguage("rust", rust)
+  hljs.registerLanguage("sql", sql)
+  hljs.registerLanguage("bash", bash)
+  hljs.registerLanguage("xml", xml)
+  hljs.registerLanguage("css", css)
+  hljs.registerLanguage("json", json)
+  languagesRegistered = true
+}
 
 interface CodeBlockProps {
   code: string
@@ -43,16 +48,19 @@ export const CodeBlock = React.memo(function CodeBlock({ code, language, classNa
   const codeRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
+    ensureLanguagesRegistered()
     if (codeRef.current) {
       hljs.highlightElement(codeRef.current)
     }
   }, [code, language])
 
+  const langClass = useMemo(() => language ? `language-${language}` : "language-auto", [language])
+
   return (
     <pre className={`rounded-lg bg-muted p-4 overflow-x-auto ${className}`}>
       <code
         ref={codeRef}
-        className={language ? `language-${language}` : "language-auto"}
+        className={langClass}
       >
         {code}
       </code>

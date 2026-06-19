@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useRef, useCallback, useState } from "react"
 import { Clock } from "lucide-react"
 
 interface PracticeTimerProps {
@@ -11,10 +11,20 @@ interface PracticeTimerProps {
 export function PracticeTimer({ isRunning, onTimeUpdate }: PracticeTimerProps) {
   const [seconds, setSeconds] = useState(0)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
+  const callbackRef = useRef(onTimeUpdate)
+  const wasRunningRef = useRef(false)
+  
+  useEffect(() => {
+    callbackRef.current = onTimeUpdate
+  }, [onTimeUpdate])
 
   useEffect(() => {
+    if (isRunning && !wasRunningRef.current) {
+      setSeconds(0)
+    }
+    wasRunningRef.current = isRunning
+
     if (isRunning) {
-      window.setTimeout(() => setSeconds(0), 0)
       intervalRef.current = setInterval(() => {
         setSeconds(prev => prev + 1)
       }, 1000)
@@ -33,14 +43,14 @@ export function PracticeTimer({ isRunning, onTimeUpdate }: PracticeTimerProps) {
   }, [isRunning])
 
   useEffect(() => {
-    onTimeUpdate?.(seconds)
-  }, [seconds, onTimeUpdate])
+    callbackRef.current?.(seconds)
+  }, [seconds])
 
-  const formatTime = (s: number) => {
+  const formatTime = useCallback((s: number) => {
     const mins = Math.floor(s / 60)
     const secs = s % 60
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-  }
+  }, [])
 
   return (
     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">

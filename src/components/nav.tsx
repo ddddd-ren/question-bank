@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, memo } from "react"
+import { useState, useCallback } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { BookOpen, FileText, FileUp, GraduationCap, Heart, LayoutDashboard, Layers, Menu, PenTool, Settings, X, XCircle } from "lucide-react"
@@ -19,9 +19,17 @@ const navItems = [
   { href: "/settings", label: "设置", icon: Settings },
 ]
 
-export const Nav = memo(function Nav() {
+export function Nav() {
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  const toggleMobileMenu = useCallback(() => {
+    setMobileMenuOpen(prev => !prev)
+  }, [])
+
+  const closeMobileMenu = useCallback(() => {
+    setMobileMenuOpen(false)
+  }, [])
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/70 bg-background/82 backdrop-blur-xl">
@@ -62,7 +70,7 @@ export const Nav = memo(function Nav() {
           <ThemeToggle />
           <button
             type="button"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            onClick={toggleMobileMenu}
             className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-border/70 bg-card text-foreground transition-colors hover:bg-muted"
             aria-label={mobileMenuOpen ? "关闭导航" : "打开导航"}
           >
@@ -81,7 +89,7 @@ export const Nav = memo(function Nav() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  onClick={() => setMobileMenuOpen(false)}
+                  onClick={closeMobileMenu}
                   className={cn(
                     "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
                     isActive
@@ -99,4 +107,4 @@ export const Nav = memo(function Nav() {
       )}
     </header>
   )
-})
+}
