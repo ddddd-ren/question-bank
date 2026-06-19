@@ -1,21 +1,27 @@
-﻿import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { getQuestionById, getQuestions, updateQuestion } from "@/lib/db/queries"
 import { toEditable, fromEditable } from "@/lib/parser/question-templates"
 import { detectQuestionType } from "@/lib/parser/question-extractor"
 import { handleApiError } from "@/lib/api-error"
 import type { QuestionType } from "@/lib/types"
+import { z } from "zod"
 
-// 单个题目重新识别
+const PostRequestSchema = z.object({
+  questionId: z.number().int().positive(),
+})
+
+const PutRequestSchema = z.object({
+  action: z.enum(["reparse", "changeType", "applyTemplate"]),
+  questionIds: z.array(z.number().int().positive()).max(1000).optional(),
+  type: z.enum(["single", "multiple", "truefalse", "fill", "calculation", "essay", "code"]).optional(),
+})
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { questionId } = body
+    const validated = PostRequestSchema.parse(body)
 
-    if (!questionId) {
-      return NextResponse.json({ error: "缺少题目ID" }, { status: 400 })
-    }
-
-    const question = await getQuestionById(questionId)
+    const question = await getQuestionById(validated.questionId)
     if (!question) {
       return NextResponse.json({ error: "题目不存在" }, { status: 404 })
     }
@@ -27,7 +33,7 @@ export async function POST(request: NextRequest) {
     })
 
     return NextResponse.json({
-      questionId,
+      questionId: validated.questionId,
       original: {
         type: question.type,
         content: question.content,
@@ -39,15 +45,11 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// 批量重新识别
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { action, questionIds, type: targetType } = body as {
-      action: "reparse" | "changeType" | "applyTemplate"
-      questionIds?: number[]
-      type?: QuestionType
-    }
+    const validated = PutRequestSchema.parse(body)
+    const { action, questionIds, type: targetType } = validated
 
     let questionsToUpdate: number[] = []
 
