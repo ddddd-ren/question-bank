@@ -1,0 +1,14 @@
+.next
+node_modules
+coverage
+docs
+server.log
+test-preview.json
+tsconfig.tsbuildinfo
+.env*
+.git
+.gitignore
+Dockerfile
+docker-compose.yml
+data/*.db-shm
+data/*.db-wal

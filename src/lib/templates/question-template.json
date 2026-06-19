@@ -1,0 +1,52 @@
+{
+  "version": "1.0",
+  "description": "题库导入模板 - JSON格式",
+  "questionTypes": {
+    "single": "单选题",
+    "multiple": "多选题",
+    "truefalse": "判断题",
+    "fill": "填空题",
+    "calculation": "计算题",
+    "essay": "论述题",
+    "code": "编程题"
+  },
+  "examples": [
+    {
+      "type": "single",
+      "content": "以下哪个是JavaScript的数据类型？",
+      "options": ["A. String", "B. Number", "C. Boolean", "D. 以上都是"],
+      "answer": "D",
+      "explanation": "JavaScript包含String、Number、Boolean等基本数据类型",
+      "tags": ["JavaScript", "基础"]
+    },
+    {
+      "type": "multiple",
+      "content": "以下哪些是CSS布局方式？",
+      "options": ["A. Flexbox", "B. Grid", "C. Float", "D. Table"],
+      "answer": "ABCD",
+      "explanation": "Flexbox、Grid、Float和Table都可以用于CSS布局",
+      "tags": ["CSS", "布局"]
+    },
+    {
+      "type": "truefalse",
+      "content": "JavaScript是一种静态类型语言",
+      "answer": "false",
+      "explanation": "JavaScript是动态类型语言，变量类型在运行时确定",
+      "tags": ["JavaScript", "基础"]
+    },
+    {
+      "type": "fill",
+      "content": "HTML中，____标签用于创建超链接",
+      "answer": "a",
+      "explanation": "HTML使用<a>标签创建超链接",
+      "tags": ["HTML", "基础"]
+    },
+    {
+      "type": "code",
+      "content": "编写一个JavaScript函数，实现数组去重",
+      "answer": "function unique(arr) {\n  return [...new Set(arr)];\n}",
+      "explanation": "使用ES6的Set数据结构可以快速实现数组去重",
+      "tags": ["JavaScript", "算法"]
+    }
+  ]
+}
