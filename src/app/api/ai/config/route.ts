@@ -22,7 +22,11 @@ export async function GET() {
       apiKey: p.apiKey ? `${p.apiKey.substring(0, 4)}****${p.apiKey.substring(p.apiKey.length - 4)}` : "",
       hasApiKey: !!p.apiKey,
     }))
-    return NextResponse.json(safeProviders)
+    return NextResponse.json(safeProviders, {
+      headers: {
+        "Cache-Control": "private, no-cache, no-store, must-revalidate",
+      },
+    })
   } catch (error) {
     return handleApiError(error)
   }
