@@ -2,7 +2,7 @@
 node_modules
 coverage
 docs
-server.log
+server*.log
 test-preview.json
 tsconfig.tsbuildinfo
 .env*
@@ -10,5 +10,6 @@ tsconfig.tsbuildinfo
 .gitignore
 Dockerfile
 docker-compose.yml
+data/*.db
 data/*.db-shm
 data/*.db-wal

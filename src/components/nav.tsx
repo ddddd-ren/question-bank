@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { BookOpen, FileText, FileUp, GraduationCap, Heart, LayoutDashboard, Layers, Menu, PenTool, Settings, X, XCircle } from "lucide-react"
+import { BookOpen, FileText, FileUp, GraduationCap, Heart, LayoutDashboard, Layers, LogOut, Menu, PenTool, Settings, X, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ThemeToggle } from "./theme-toggle"
 
@@ -30,6 +30,13 @@ export function Nav() {
   const closeMobileMenu = useCallback(() => {
     setMobileMenuOpen(false)
   }, [])
+
+  const logout = useCallback(async () => {
+    await fetch("/api/auth/logout", { method: "POST" })
+    window.location.href = "/login"
+  }, [])
+
+  if (pathname === "/login") return null
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/70 bg-background/82 backdrop-blur-xl">
@@ -64,10 +71,28 @@ export function Nav() {
             })}
           </nav>
           <ThemeToggle />
+          <button
+            type="button"
+            onClick={logout}
+            className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-border/70 bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="退出登录"
+            title="退出登录"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
         </div>
 
         <div className="flex lg:hidden items-center gap-2">
           <ThemeToggle />
+          <button
+            type="button"
+            onClick={logout}
+            className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-border/70 bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="退出登录"
+            title="退出登录"
+          >
+            <LogOut className="h-4 w-4" />
+          </button>
           <button
             type="button"
             onClick={toggleMobileMenu}

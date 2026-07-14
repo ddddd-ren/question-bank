@@ -4,10 +4,11 @@ services:
     image: question-bank:latest
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       NODE_ENV: production
       DATABASE_PATH: /app/data/question-bank.db
+      APP_ACCESS_TOKEN: ${APP_ACCESS_TOKEN:?APP_ACCESS_TOKEN is required}
     volumes:
       - ./data:/app/data
     healthcheck:

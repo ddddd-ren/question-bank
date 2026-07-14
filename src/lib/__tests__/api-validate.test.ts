@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest"
-import { requireBody, parsePagination, parseOptionalNumber, parseOptionalString } from "../api-validate"
+import {
+  QuestionQuerySchema,
+  requireBody,
+  parseBoundedInteger,
+  parsePagination,
+  parseOptionalNumber,
+  parseOptionalString,
+  validateQuery,
+} from "../api-validate"
 
 describe("requireBody", () => {
   it("should pass when all required fields are present", () => {
@@ -44,6 +52,16 @@ describe("parsePagination", () => {
     const params = new URLSearchParams({ pageSize: "0" })
     expect(parsePagination(params).pageSize).toBe(1)
   })
+
+  it("should use defaults for non-finite pagination params", () => {
+    const params = new URLSearchParams({ page: "abc", pageSize: "Infinity" })
+    expect(parsePagination(params)).toEqual({ page: 1, pageSize: 20, offset: 0 })
+  })
+
+  it("should floor decimal pagination params", () => {
+    const params = new URLSearchParams({ page: "2.9", pageSize: "10.8" })
+    expect(parsePagination(params)).toEqual({ page: 2, pageSize: 10, offset: 10 })
+  })
 })
 
 describe("parseOptionalNumber", () => {
@@ -58,6 +76,26 @@ describe("parseOptionalNumber", () => {
   it("should return undefined for NaN", () => {
     expect(parseOptionalNumber("abc")).toBeUndefined()
   })
+
+  it("should return undefined for non-finite numbers", () => {
+    expect(parseOptionalNumber("Infinity")).toBeUndefined()
+  })
+})
+
+describe("parseBoundedInteger", () => {
+  const options = { defaultValue: 10, min: 1, max: 100 }
+
+  it("should parse and clamp integer values", () => {
+    expect(parseBoundedInteger("25", options)).toBe(25)
+    expect(parseBoundedInteger("0", options)).toBe(1)
+    expect(parseBoundedInteger("999", options)).toBe(100)
+  })
+
+  it("should floor decimals and use defaults for invalid values", () => {
+    expect(parseBoundedInteger("12.8", options)).toBe(12)
+    expect(parseBoundedInteger("abc", options)).toBe(10)
+    expect(parseBoundedInteger(null, options)).toBe(10)
+  })
 })
 
 describe("parseOptionalString", () => {
@@ -71,5 +109,28 @@ describe("parseOptionalString", () => {
 
   it("should return the string value", () => {
     expect(parseOptionalString("hello")).toBe("hello")
+  })
+})
+
+describe("validateQuery", () => {
+  it("should parse query booleans explicitly", () => {
+    const enabled = validateQuery(QuestionQuerySchema, new URLSearchParams({
+      hasAnswer: "true",
+      stats: "1",
+    }))
+    expect(enabled.hasAnswer).toBe(true)
+    expect(enabled.stats).toBe(true)
+
+    const disabled = validateQuery(QuestionQuerySchema, new URLSearchParams({
+      hasAnswer: "false",
+      stats: "0",
+    }))
+    expect(disabled.hasAnswer).toBe(false)
+    expect(disabled.stats).toBe(false)
+  })
+
+  it("should reject invalid query boolean values", () => {
+    const params = new URLSearchParams({ stats: "no" })
+    expect(() => validateQuery(QuestionQuerySchema, params)).toThrow("参数错误: stats")
   })
 })

@@ -1,6 +1,12 @@
 import { z } from "zod"
 import { ApiError } from "./api-error"
 
+function parseFiniteNumber(value: string | null, fallback: number): number {
+  if (!value) return fallback
+  const number = Number(value)
+  return Number.isFinite(number) ? number : fallback
+}
+
 export function requireBody(body: Record<string, unknown>, fields: string[]) {
   for (const field of fields) {
     if (body[field] === undefined || body[field] === null || body[field] === "") {
@@ -10,20 +16,36 @@ export function requireBody(body: Record<string, unknown>, fields: string[]) {
 }
 
 export function parsePagination(searchParams: URLSearchParams) {
-  const page = Math.max(1, Number(searchParams.get("page") || "1"))
-  const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize") || "20")))
+  const page = Math.max(1, Math.floor(parseFiniteNumber(searchParams.get("page"), 1)))
+  const pageSize = Math.min(100, Math.max(1, Math.floor(parseFiniteNumber(searchParams.get("pageSize"), 20))))
   return { page, pageSize, offset: (page - 1) * pageSize }
 }
 
 export function parseOptionalNumber(value: string | null): number | undefined {
   if (!value) return undefined
   const num = Number(value)
-  return isNaN(num) ? undefined : num
+  return Number.isFinite(num) ? num : undefined
+}
+
+export function parseBoundedInteger(value: string | null, options: {
+  defaultValue: number
+  min: number
+  max: number
+}): number {
+  const parsed = Math.floor(parseFiniteNumber(value, options.defaultValue))
+  return Math.min(options.max, Math.max(options.min, parsed))
 }
 
 export function parseOptionalString(value: string | null): string | undefined {
   return value || undefined
 }
+
+const QueryBooleanSchema = z.preprocess((value) => {
+  if (typeof value !== "string") return value
+  if (value === "true" || value === "1") return true
+  if (value === "false" || value === "0") return false
+  return value
+}, z.boolean())
 
 export const QuestionTypeSchema = z.enum([
   "single", "multiple", "truefalse", "fill", "calculation", "essay", "code"
@@ -37,9 +59,9 @@ export const QuestionQuerySchema = z.object({
   subjectId: z.coerce.number().int().positive().optional(),
   knowledgePointId: z.coerce.number().int().positive().optional(),
   search: z.string().max(200).optional(),
-  hasAnswer: z.coerce.boolean().default(false),
+  hasAnswer: QueryBooleanSchema.default(false),
   recentDays: z.coerce.number().int().positive().max(365).optional(),
-  stats: z.coerce.boolean().default(false),
+  stats: QueryBooleanSchema.default(false),
 })
 
 export const PracticeSubmitSchema = z.object({

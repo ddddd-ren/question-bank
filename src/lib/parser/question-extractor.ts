@@ -155,6 +155,8 @@ function splitPowerPointText(text: string): string[] {
 
 function pushUniqueParagraph(target: string[], seen: Set<string>, text: string) {
   for (const paragraph of splitPowerPointText(text)) {
+    if (paragraph.length < 3 || isGarbageText(paragraph)) continue
+
     const key = paragraph.replace(/\s+/g, "")
     if (!seen.has(key)) {
       seen.add(key)
@@ -222,26 +224,12 @@ function extractLegacyPowerPointParagraphs(buffer: Buffer): string[] {
       ? payload.toString("latin1")
       : payload.toString("utf16le")
 
-    const lines = normalizePowerPointText(text).split(/\n+/).filter(l => l.trim().length >= 3 && !isGarbageText(l.trim()))
-    for (const line of lines) {
-      const key = line.replace(/\s+/g, "")
-      if (!seen.has(key)) {
-        seen.add(key)
-        paragraphs.push(line.trim())
-      }
-    }
+    pushUniqueParagraph(paragraphs, seen, text)
   }
 
   if (paragraphs.length === 0) {
     for (const text of extractUtf16Runs(buffer)) {
-      const lines = normalizePowerPointText(text).split(/\n+/).filter(l => l.trim().length >= 3 && !isGarbageText(l.trim()))
-      for (const line of lines) {
-        const key = line.replace(/\s+/g, "")
-        if (!seen.has(key)) {
-          seen.add(key)
-          paragraphs.push(line.trim())
-        }
-      }
+      pushUniqueParagraph(paragraphs, seen, text)
     }
   }
 

@@ -20,6 +20,13 @@
 # production
 /build
 
+# runtime data
+/data/*.db
+/data/*.db-shm
+/data/*.db-wal
+/server.log
+/server.err.log
+
 # misc
 .DS_Store
 *.pem

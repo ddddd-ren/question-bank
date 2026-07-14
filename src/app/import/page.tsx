@@ -271,11 +271,13 @@ export default function ImportPage() {
     }
   }, [])
 
-  const typeCounts = parsedQuestions.reduce((acc, q) => {
-    const type = q.editable.type
-    acc[type] = (acc[type] || 0) + 1
-    return acc
-  }, {} as Record<string, number>)
+  const typeCounts = useMemo(() => {
+    return parsedQuestions.reduce((acc, q) => {
+      const type = q.editable.type
+      acc[type] = (acc[type] || 0) + 1
+      return acc
+    }, {} as Record<string, number>)
+  }, [parsedQuestions])
 
   const qualitySummary = useMemo(() => {
     if (!parsedQuestions.length) return null

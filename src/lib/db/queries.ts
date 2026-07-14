@@ -21,6 +21,43 @@ import {
 import { eq, and, like, desc, sql, count, inArray } from "drizzle-orm"
 import { type QuestionType, isQuestionType } from "@/lib/types"
 
+const SQLITE_IN_CHUNK_SIZE = 500
+const SQLITE_INSERT_CHUNK_SIZE = 400
+
+const QUESTION_COLUMNS = [
+  "id",
+  "type",
+  "content",
+  "options",
+  "answer",
+  "explanation",
+  "category_id AS categoryId",
+  "subject_id AS subjectId",
+  "knowledge_point_id AS knowledgePointId",
+  "difficulty",
+  "tags",
+  "content_hash AS contentHash",
+  "source_file AS sourceFile",
+  "created_at AS createdAt",
+  "updated_at AS updatedAt",
+]
+
+const QUESTION_SELECT_COLUMNS = QUESTION_COLUMNS.join(", ")
+const ALIASED_QUESTION_SELECT_COLUMNS = QUESTION_COLUMNS
+  .map((column) => {
+    const [source, alias] = column.split(/\s+AS\s+/i)
+    return alias ? `q.${source} AS ${alias}` : `q.${source}`
+  })
+  .join(", ")
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = []
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size))
+  }
+  return chunks
+}
+
 // Questions CRUD
 export async function createQuestion(data: NewQuestion): Promise<Question> {
   const [result] = await db.insert(questions).values(data).returning()
@@ -28,7 +65,13 @@ export async function createQuestion(data: NewQuestion): Promise<Question> {
 }
 
 export async function createQuestionsBatch(data: NewQuestion[]): Promise<Question[]> {
-  return await db.insert(questions).values(data).returning()
+  if (data.length === 0) return []
+
+  const created: Question[] = []
+  for (const batch of chunkArray(data, SQLITE_INSERT_CHUNK_SIZE)) {
+    created.push(...await db.insert(questions).values(batch).returning())
+  }
+  return created
 }
 
 export async function getQuestionById(id: number): Promise<Question | undefined> {
@@ -100,31 +143,38 @@ export async function getRandomQuestions(options?: {
 }): Promise<Question[]> {
   const { type, categoryId, subjectId, knowledgePointId, count: limit = 10 } = options || {}
 
-  const conditions = []
+  if (type && !isQuestionType(type)) return []
+
+  const conditions: string[] = []
+  const params: (string | number)[] = []
   if (type) {
-    conditions.push(`type = '${type.replace(/'/g, "''")}'`)
+    conditions.push("type = ?")
+    params.push(type)
   }
   if (categoryId) {
-    conditions.push(`category_id = ${categoryId}`)
+    conditions.push("category_id = ?")
+    params.push(categoryId)
   }
   if (subjectId) {
-    conditions.push(`subject_id = ${subjectId}`)
+    conditions.push("subject_id = ?")
+    params.push(subjectId)
   }
   if (knowledgePointId) {
-    conditions.push(`knowledge_point_id = ${knowledgePointId}`)
+    conditions.push("knowledge_point_id = ?")
+    params.push(knowledgePointId)
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : ""
 
   const rows = sqliteDb
-    .prepare(`SELECT * FROM questions ${whereClause} ORDER BY RANDOM() LIMIT ?`)
-    .all(limit) as Question[]
+    .prepare(`SELECT ${QUESTION_SELECT_COLUMNS} FROM questions ${whereClause} ORDER BY RANDOM() LIMIT ?`)
+    .all(...params, limit) as Question[]
 
   return rows
 }
 
 const questionByHashStmt = sqliteDb.prepare(
-  "SELECT * FROM questions WHERE content_hash = ?"
+  `SELECT ${QUESTION_SELECT_COLUMNS} FROM questions WHERE content_hash = ?`
 )
 
 export async function getQuestionByHash(contentHash: string): Promise<Question | undefined> {
@@ -133,16 +183,26 @@ export async function getQuestionByHash(contentHash: string): Promise<Question |
 
 export async function getQuestionsByHashes(hashes: string[]): Promise<Question[]> {
   if (hashes.length === 0) return []
-  return await db.query.questions.findMany({
-    where: inArray(questions.contentHash, hashes),
-  })
+
+  const found: Question[] = []
+  for (const batch of chunkArray(Array.from(new Set(hashes)), SQLITE_IN_CHUNK_SIZE)) {
+    found.push(...await db.query.questions.findMany({
+      where: inArray(questions.contentHash, batch),
+    }))
+  }
+  return found
 }
 
 export async function getQuestionsByIds(ids: number[]): Promise<Question[]> {
   if (ids.length === 0) return []
-  return await db.query.questions.findMany({
-    where: inArray(questions.id, ids),
-  })
+
+  const found: Question[] = []
+  for (const batch of chunkArray(Array.from(new Set(ids)), SQLITE_IN_CHUNK_SIZE)) {
+    found.push(...await db.query.questions.findMany({
+      where: inArray(questions.id, batch),
+    }))
+  }
+  return found
 }
 
 export async function updateQuestion(id: number, data: Partial<NewQuestion>): Promise<Question | undefined> {
@@ -488,8 +548,11 @@ export async function getWrongQuestions(options?: {
 }): Promise<Question[]> {
   const { type, count: limit = 20 } = options || {}
 
+  if (type && type !== "all" && !isQuestionType(type)) return []
+
   let query = `
-    SELECT q.* FROM questions q
+    SELECT ${ALIASED_QUESTION_SELECT_COLUMNS}
+    FROM questions q
     INNER JOIN (
       SELECT question_id, MAX(created_at) as latest
       FROM practice_records
@@ -504,7 +567,8 @@ export async function getWrongQuestions(options?: {
 
   if (type && type !== "all") {
     query = `
-      SELECT q.* FROM questions q
+      SELECT ${ALIASED_QUESTION_SELECT_COLUMNS}
+      FROM questions q
       INNER JOIN (
         SELECT question_id, MAX(created_at) as latest
         FROM practice_records

@@ -3,6 +3,7 @@ import { getAllProviders, updateProvider, activateProvider } from "@/lib/ai/quer
 import { handleApiError } from "@/lib/api-error"
 import { ApiError } from "@/lib/api-error"
 import { z } from "zod"
+import { toSafeProvider } from "@/lib/ai/config-response"
 
 const ProviderUpdateSchema = z.object({
   id: z.string().min(1),
@@ -17,11 +18,7 @@ const ProviderUpdateSchema = z.object({
 export async function GET() {
   try {
     const providers = getAllProviders()
-    const safeProviders = providers.map(p => ({
-      ...p,
-      apiKey: p.apiKey ? `${p.apiKey.substring(0, 4)}****${p.apiKey.substring(p.apiKey.length - 4)}` : "",
-      hasApiKey: !!p.apiKey,
-    }))
+    const safeProviders = providers.map(toSafeProvider)
     return NextResponse.json(safeProviders, {
       headers: {
         "Cache-Control": "private, no-cache, no-store, must-revalidate",

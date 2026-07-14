@@ -2,15 +2,14 @@ import { NextRequest, NextResponse } from "next/server"
 import { getRandomQuestions, getWrongQuestions, createPracticeRecord, getPracticeStats } from "@/lib/db/queries"
 import { serializeQuestions } from "@/lib/db/serialize"
 import { handleApiError } from "@/lib/api-error"
-import { PracticeSubmitSchema, validateBody } from "@/lib/api-validate"
-import { parseOptionalNumber, parseOptionalString } from "@/lib/api-validate"
+import { PracticeSubmitSchema, parseBoundedInteger, parseOptionalNumber, parseOptionalString, validateBody } from "@/lib/api-validate"
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const type = parseOptionalString(searchParams.get("type"))
     const categoryId = parseOptionalNumber(searchParams.get("categoryId"))
-    const count = searchParams.get("count") ? Number(searchParams.get("count")) : 10
+    const count = parseBoundedInteger(searchParams.get("count"), { defaultValue: 10, min: 1, max: 100 })
     const stats = searchParams.get("stats") === "true"
     const mode = searchParams.get("mode")
 
