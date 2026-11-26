@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "benchmark:api": "node scripts/benchmark-api.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
@@ -19,25 +20,30 @@
     "@radix-ui/react-separator": "^1.1.8",
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-tabs": "^1.1.13",
+    "@xmldom/xmldom": "0.8.15",
     "better-sqlite3": "^12.10.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "compression": "^1.8.1",
+    "csv-parse": "^7.0.2",
     "drizzle-orm": "^0.45.2",
     "highlight.js": "^11.11.1",
     "jszip": "^3.10.1",
+    "katex": "^0.19.1",
     "lucide-react": "^1.16.0",
     "mammoth": "^1.12.0",
-    "next": "16.2.10",
+    "next": "^16.4.6",
     "openai": "^6.39.0",
+    "pdfjs-dist": "6.5.438",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
     "swr": "^2.4.1",
     "tailwind-merge": "^3.6.0",
-    "unpdf": "^1.6.2",
-    "zod": "^4.4.3",
+    "zod": "^4.6.6",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
@@ -49,13 +55,14 @@
     "@vitest/coverage-v8": "^3.2.1",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
-    "eslint-config-next": "16.2.10",
+    "eslint-config-next": "^16.4.6",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^3.2.1"
   },
   "overrides": {
-    "postcss": "8.5.10",
+    "katex": "$katex",
+    "postcss": "8.5.26",
     "vite": {
       "esbuild": "0.28.1"
     }

@@ -2,15 +2,17 @@
 
 import { useState, useCallback } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { BookOpen, FileText, FileUp, GraduationCap, Heart, LayoutDashboard, Layers, LogOut, Menu, PenTool, Settings, X, XCircle } from "lucide-react"
+import { usePathname, useRouter } from "next/navigation"
+import { BookMarked, BookOpen, FileText, FileUp, GraduationCap, Heart, LayoutDashboard, Layers, LogOut, Menu, PenTool, Settings, X, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ThemeToggle } from "./theme-toggle"
+import { clearQuestionBankCaches } from "@/hooks/use-service-worker"
 
 const navItems = [
   { href: "/", label: "仪表盘", icon: LayoutDashboard },
   { href: "/import", label: "导入", icon: FileUp },
   { href: "/bank", label: "题库", icon: BookOpen },
+  { href: "/textbooks", label: "教材", icon: BookMarked },
   { href: "/subjects", label: "学科", icon: Layers },
   { href: "/paper", label: "组卷", icon: FileText },
   { href: "/practice", label: "练习", icon: PenTool },
@@ -21,6 +23,7 @@ const navItems = [
 
 export function Nav() {
   const pathname = usePathname()
+  const router = useRouter()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const toggleMobileMenu = useCallback(() => {
@@ -33,8 +36,9 @@ export function Nav() {
 
   const logout = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST" })
-    window.location.href = "/login"
-  }, [])
+    await clearQuestionBankCaches()
+    router.replace("/login")
+  }, [router])
 
   if (pathname === "/login") return null
 
@@ -58,7 +62,7 @@ export function Nav() {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-colors",
+                    "flex items-center gap-1.5 px-2 xl:px-3 py-1.5 rounded-md text-sm whitespace-nowrap transition-colors",
                     isActive
                       ? "bg-secondary text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted/70"

@@ -4,12 +4,13 @@ import { handleApiError } from "@/lib/api-error"
 import { ApiError } from "@/lib/api-error"
 import { parsePagination } from "@/lib/api-validate"
 import { z } from "zod"
+import { withSession } from "@/lib/auth-route"
 
 const FavoriteToggleSchema = z.object({
   questionId: z.number().int().positive(),
 })
 
-export async function GET(request: NextRequest) {
+export const GET = withSession(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const { page, pageSize } = parsePagination(searchParams)
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
       const favorite = await getFavoriteByQuestionId(numId)
       return NextResponse.json({ isFavorited: !!favorite }, {
         headers: {
-          "Cache-Control": "private, max-age=10, stale-while-revalidate=5",
+          "Cache-Control": "private, no-store",
         },
       })
     }
@@ -33,15 +34,15 @@ export async function GET(request: NextRequest) {
     const result = await getFavorites({ type: typeFilter || undefined, search: searchQuery || undefined, page, pageSize })
     return NextResponse.json(result, {
       headers: {
-        "Cache-Control": "private, max-age=30, stale-while-revalidate=15",
+        "Cache-Control": "private, no-store",
       },
     })
   } catch (error) {
     return handleApiError(error)
   }
-}
+})
 
-export async function POST(request: NextRequest) {
+export const POST = withSession(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const validated = FavoriteToggleSchema.parse(body)
@@ -50,4 +51,4 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})

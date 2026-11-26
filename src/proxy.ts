@@ -21,9 +21,13 @@ export function proxy(request: NextRequest) {
   }
 
   const response = NextResponse.next()
+  const inlineTextbookPdf = /^\/api\/textbooks\/[^/]+\/content$/u.test(pathname)
+    && request.nextUrl.searchParams.get("original") === "1"
+    && request.nextUrl.searchParams.get("inline") === "1"
 
   response.headers.set("X-Content-Type-Options", "nosniff")
-  response.headers.set("X-Frame-Options", "DENY")
+  response.headers.set("X-Frame-Options", inlineTextbookPdf ? "SAMEORIGIN" : "DENY")
+  if (inlineTextbookPdf) response.headers.set("Content-Security-Policy", "frame-ancestors 'self'")
   response.headers.set("X-XSS-Protection", "1; mode=block")
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
 

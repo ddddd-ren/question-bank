@@ -9,6 +9,7 @@
 3. 在项目根目录准备环境变量，可按需设置：
 
 ```bash
+APP_ACCESS_TOKEN=长度足够且不可预测的随机令牌
 LLM_API_KEY=你的模型服务密钥
 DATABASE_PATH=/app/data/question-bank.db
 ```
@@ -19,21 +20,28 @@ DATABASE_PATH=/app/data/question-bank.db
 docker compose up -d --build
 ```
 
-5. 访问：
+5. 本机访问：
 
 ```bash
-http://服务器IP:3000
+http://127.0.0.1:3000
 ```
+
+Compose 默认只绑定本机。如果需要其他设备访问，应通过同机 HTTPS 反向代理转发，不要直接把 3000 端口暴露到公网。容器健康检查访问公开的 `/api/health`，不会绕过业务接口的登录保护。
+
+代码运行默认为关闭。自建 Piston 时，将 `PISTON_EXECUTE_URL` 设为题库容器可访问的完整执行接口。同一 Docker 网络内可使用服务名，例如 `http://piston:2000/api/v2/execute`。使用要求 Bearer 认证的接口时，再设置 `PISTON_API_TOKEN`。
 
 ## 持久化数据
 
 `docker-compose.yml` 已将本机 `./data` 挂载到容器 `/app/data`。重新构建镜像不会删除题库。
 
-建议定期备份：
+在设置页下载完整备份，或在安装了项目依赖的环境执行一致性备份；不要在运行中直接复制 WAL 模式的数据库主文件：
 
 ```bash
-cp data/question-bank.db data/question-bank-$(date +%F).db
+node scripts/database-backup.mjs backup /backups/question-bank.db
+node scripts/database-backup.mjs verify /backups/question-bank.db
 ```
+
+恢复前停止所有题库进程，然后执行 `node scripts/database-backup.mjs restore /backups/question-bank.db --stopped`。工具在替换前校验数据库，并保留恢复前原库。发现 WAL/SHM/日志文件时会拒绝恢复，应先确认服务已正常关闭，不要删除活跃日志。备份可能含 AI Key，不应提交到 Git 或公开分享。容器中如未包含脚本，可在宿主机的项目目录使用同一数据库路径操作。
 
 ## Nginx 反向代理示例
 

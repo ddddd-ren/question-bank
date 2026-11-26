@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCategories, createCategory, deleteCategory } from "@/lib/db/queries"
 import { ApiError, handleApiError } from "@/lib/api-error"
+import { withSession } from "@/lib/auth-route"
 import { z } from "zod"
 
 const CategorySchema = z.object({
@@ -8,7 +9,7 @@ const CategorySchema = z.object({
   parentId: z.number().int().positive().nullable().optional(),
 })
 
-export async function GET() {
+export const GET = withSession(async function GET() {
   try {
     const categories = await getCategories()
     return NextResponse.json(categories, {
@@ -19,9 +20,9 @@ export async function GET() {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})
 
-export async function POST(request: NextRequest) {
+export const POST = withSession(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const validated = CategorySchema.parse(body)
@@ -30,9 +31,9 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})
 
-export async function DELETE(request: NextRequest) {
+export const DELETE = withSession(async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get("id")
@@ -51,4 +52,4 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})

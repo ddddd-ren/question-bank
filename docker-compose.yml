@@ -9,10 +9,12 @@ services:
       NODE_ENV: production
       DATABASE_PATH: /app/data/question-bank.db
       APP_ACCESS_TOKEN: ${APP_ACCESS_TOKEN:?APP_ACCESS_TOKEN is required}
+      PISTON_EXECUTE_URL: ${PISTON_EXECUTE_URL:-}
+      PISTON_API_TOKEN: ${PISTON_API_TOKEN:-}
     volumes:
       - ./data:/app/data
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/dashboard', (r) => { process.exit(r.statusCode === 200 ? 0 : 1) })"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1) })"]
       interval: 30s
       timeout: 10s
       retries: 3

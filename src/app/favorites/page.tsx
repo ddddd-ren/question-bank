@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback } from "react"
 import Link from "next/link"
 import { ChevronLeft, ChevronRight, Eye, Heart, Search } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -10,15 +10,8 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { showToast } from "@/components/toast"
 import { typeColors, typeLabels } from "@/lib/constants"
-
-interface FavoriteItem {
-  id: number
-  questionId: number
-  createdAt: string
-  questionContent: string
-  questionType: string
-  questionAnswer: string | null
-}
+import { usePaginatedFilter } from "@/hooks/use-paginated-filter"
+import { useFavorites } from "@/hooks/use-swr-fetcher"
 
 const questionTypeOptions = [
   { value: "all", label: "全部题型" },
@@ -32,65 +25,56 @@ const questionTypeOptions = [
 ]
 
 export default function FavoritesPage() {
-  const [favorites, setFavorites] = useState<FavoriteItem[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [loading, setLoading] = useState(true)
-  const [typeFilter, setTypeFilter] = useState("all")
-  const [search, setSearch] = useState("")
-
-  const fetchFavorites = useCallback(async () => {
-    setLoading(true)
-    try {
-      const params = new URLSearchParams({ page: page.toString(), pageSize: "20" })
-      if (typeFilter && typeFilter !== "all") params.set("type", typeFilter)
-      if (search) params.set("search", search)
-
-      const res = await fetch(`/api/favorites?${params}`)
-      if (!res.ok) throw new Error("获取收藏失败")
-
-      const data = await res.json()
-      setFavorites(data.data)
-      setTotal(data.total)
-      setTotalPages(data.totalPages)
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "获取收藏失败", "error")
-    } finally {
-      setLoading(false)
-    }
-  }, [page, typeFilter, search])
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void fetchFavorites()
-    }, 0)
-    return () => window.clearTimeout(timer)
-  }, [fetchFavorites])
+  const {
+    page,
+    setPage,
+    typeFilter,
+    setTypeFilter,
+    searchInput,
+    setSearchInput,
+    committedSearch,
+    clearFilters,
+  } = usePaginatedFilter()
+  const { data, error, isLoading, mutate } = useFavorites({
+    page,
+    pageSize: 20,
+    type: typeFilter,
+    search: committedSearch,
+  })
+  const favorites = data?.data ?? []
+  const total = data?.total ?? 0
+  const totalPages = data?.totalPages ?? 1
 
   const handleRemoveFavorite = useCallback(async (questionId: number) => {
     try {
-      const res = await fetch("/api/favorites", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId }),
+      if (!data) return
+      const optimisticData = {
+        ...data,
+        data: data.data.filter((item) => item.questionId !== questionId),
+        total: Math.max(0, data.total - 1),
+      }
+
+      await mutate(async () => {
+        const res = await fetch("/api/favorites", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ questionId }),
+        })
+        if (!res.ok) throw new Error("取消收藏失败")
+        return optimisticData
+      }, {
+        optimisticData,
+        rollbackOnError: true,
+        revalidate: false,
       })
-      if (!res.ok) throw new Error("取消收藏失败")
 
       showToast("已取消收藏", "success")
-      void fetchFavorites()
     } catch (error) {
       showToast(error instanceof Error ? error.message : "操作失败", "error")
     }
-  }, [fetchFavorites])
+  }, [data, mutate])
 
-  const clearFilters = useCallback(() => {
-    setSearch("")
-    setTypeFilter("all")
-    setPage(1)
-  }, [])
-
-  if (loading) {
+  if (isLoading && !data) {
     return (
       <div className="space-y-6">
         <div className="page-header">
@@ -105,7 +89,7 @@ export default function FavoritesPage() {
     )
   }
 
-  const hasFilters = Boolean(search || typeFilter !== "all")
+  const hasFilters = Boolean(searchInput || typeFilter !== "all")
 
   return (
     <div className="space-y-6">
@@ -121,9 +105,8 @@ export default function FavoritesPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="搜索收藏内容..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && setPage(1)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 className="pl-9"
               />
             </div>
@@ -147,6 +130,8 @@ export default function FavoritesPage() {
           </div>
         </CardContent>
       </Card>
+
+      {error && <p role="alert" className="text-sm text-destructive">获取收藏失败，请稍后重试</p>}
 
       <div className="flex items-center justify-between">
         <span className="text-sm text-muted-foreground">

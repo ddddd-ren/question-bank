@@ -4,6 +4,7 @@ import { handleApiError } from "@/lib/api-error"
 import { ApiError } from "@/lib/api-error"
 import { z } from "zod"
 import { toSafeProvider } from "@/lib/ai/config-response"
+import { withSession } from "@/lib/auth-route"
 
 const ProviderUpdateSchema = z.object({
   id: z.string().min(1),
@@ -15,7 +16,7 @@ const ProviderUpdateSchema = z.object({
   maxTokens: z.number().int().min(100).max(100000).optional(),
 })
 
-export async function GET() {
+export const GET = withSession(async function GET() {
   try {
     const providers = getAllProviders()
     const safeProviders = providers.map(toSafeProvider)
@@ -27,9 +28,9 @@ export async function GET() {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})
 
-export async function PUT(request: NextRequest) {
+export const PUT = withSession(async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const validated = ProviderUpdateSchema.parse(body)
@@ -52,4 +53,4 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})

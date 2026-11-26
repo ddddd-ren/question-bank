@@ -1,8 +1,20 @@
-﻿import type { QuestionType, ExtractedQuestion } from './question-extractor'
+﻿import { questionFingerprint } from "@/lib/question-fingerprint"
+import type { QuestionType, ExtractedQuestion } from './question-extractor'
 import { normalizeChoiceAnswer } from './choice-answer'
+import type { RecognitionWarningCode } from './recognition-types'
+
+export type QualityIssueType =
+  | 'missing_content'
+  | 'missing_options'
+  | 'missing_answer'
+  | 'format_error'
+  | 'options_count'
+  | 'answer_mismatch'
+  | RecognitionWarningCode
 
 export interface QualityIssue {
-  type: 'missing_content' | 'missing_options' | 'missing_answer' | 'format_error' | 'options_count' | 'answer_mismatch'
+  type: QualityIssueType
+  code?: RecognitionWarningCode
   severity: 'error' | 'warning' | 'info'
   field: string
   message: string
@@ -129,7 +141,8 @@ export function normalizeOptions(options: string[] | null): { normalized: string
 function optionLetters(options: string[] | null): Set<string> {
   const letters = new Set<string>()
   options?.forEach((option, idx) => {
-    const match = option.trim().match(/^([A-Z])\s*[.、．:：]/i)
+    const match = option.trim().match(/^([A-Z])\s*[.、．:：)）]\s*(.*)$/i)
+    if (!(match ? match[2] : option).trim()) return
     letters.add((match?.[1] || String.fromCharCode(65 + idx)).toUpperCase())
   })
   return letters
@@ -216,14 +229,16 @@ export function validateQuestion(question: ExtractedQuestion): QualityIssue[] {
   }
 
   // Check answer format
-  const answerForValidation = question.type === 'single' || question.type === 'multiple'
-    ? normalizeChoiceAnswer(question.answer)
+  const isChoice = question.type === 'single' || question.type === 'multiple'
+  const choiceAnswer = isChoice ? normalizeChoiceAnswer(question.answer) : null
+  const answerForValidation = isChoice
+    ? choiceAnswer || question.answer?.trim().toUpperCase()
     : question.answer
 
-  if (answerForValidation && !template.format.answerPattern.test(answerForValidation)) {
+  if (answerForValidation && ((isChoice && choiceAnswer === null) || !template.format.answerPattern.test(answerForValidation))) {
     issues.push({
       type: 'format_error',
-      severity: 'info',
+      severity: isChoice ? 'error' : 'info',
       field: 'answer',
       message: `答案格式不符合 ${template.label} 规范`,
       autoFixed: false
@@ -231,16 +246,16 @@ export function validateQuestion(question: ExtractedQuestion): QualityIssue[] {
   }
 
   if ((question.type === 'single' || question.type === 'multiple') && question.answer && question.options?.length) {
-    const normalizedAnswer = normalizeChoiceAnswer(question.answer)
+    const normalizedAnswer = answerForValidation
     const availableLetters = optionLetters(question.options)
     const invalidLetters = normalizedAnswer
-      ?.split('')
-      .filter((letter) => !availableLetters.has(letter))
+      ?.match(/[A-Z]/g)
+      ?.filter((letter) => !availableLetters.has(letter))
 
     if (invalidLetters && invalidLetters.length > 0) {
       issues.push({
         type: 'answer_mismatch',
-        severity: 'warning',
+        severity: 'error',
         field: 'answer',
         message: `答案包含不存在的选项：${invalidLetters.join('、')}`,
         autoFixed: false
@@ -269,6 +284,7 @@ export function normalizeQuestion(question: ExtractedQuestion): NormalizedQuesti
 
   return {
     ...question,
+    contentHash: questionFingerprint({ ...question, options: normalizedOptions }),
     options: normalizedOptions,
     answer: normalizedAnswer,
     normalized: allChanges.length > 0,

@@ -1,6 +1,6 @@
 ﻿"use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,8 +17,9 @@ interface QuestionEditorProps {
   question: EditableQuestion
   index: number
   quality?: QuestionQuality
-  onSave: (index: number, question: EditableQuestion) => void
+  onSave: (index: number, question: EditableQuestion) => Promise<boolean>
   onRemove: (index: number) => void
+  onEditingChange?: (index: number, editing: boolean) => void
   onApplyTemplate?: (index: number, targetType: QuestionType, draft: EditableQuestion) => Promise<EditableQuestion | void>
 }
 
@@ -32,14 +33,24 @@ const questionTypeOptions: { value: QuestionType; label: string }[] = [
   { value: "code", label: "编程题" },
 ]
 
-export function QuestionEditor({ question, index, quality, onSave, onRemove, onApplyTemplate }: QuestionEditorProps) {
+export function QuestionEditor({ question, index, quality, onSave, onRemove, onApplyTemplate, onEditingChange }: QuestionEditorProps) {
   const [editing, setEditing] = useState(false)
   const [edited, setEdited] = useState<EditableQuestion>({ ...question })
   const [applyingTemplate, setApplyingTemplate] = useState(false)
+  const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    if (!editing || !onEditingChange) return
+    onEditingChange(index, true)
+    return () => onEditingChange(index, false)
+  }, [editing, index, onEditingChange])
 
-  const handleSave = () => {
-    onSave(index, edited)
-    setEditing(false)
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      if (await onSave(index, edited)) setEditing(false)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleCancel = () => {
@@ -61,13 +72,13 @@ export function QuestionEditor({ question, index, quality, onSave, onRemove, onA
   }
 
   const handleTypeChange = async (targetType: QuestionType) => {
-    const draft = { ...edited, type: targetType }
-    setEdited(draft)
-
-    if (!onApplyTemplate) return
+    if (!onApplyTemplate) {
+      setEdited({ ...edited, type: targetType })
+      return
+    }
     setApplyingTemplate(true)
     try {
-      const updated = await onApplyTemplate(index, targetType, draft)
+      const updated = await onApplyTemplate(index, targetType, edited)
       if (updated) {
         setEdited(updated)
       }
@@ -121,6 +132,17 @@ export function QuestionEditor({ question, index, quality, onSave, onRemove, onA
   const hasErrors = quality?.issueCount.error && quality.issueCount.error > 0
   const hasWarnings = quality?.issueCount.warning && quality.issueCount.warning > 0
   const hasChanges = quality?.question.changes && quality.question.changes.length > 0
+  const recognition = quality?.recognition
+  const preservedLabel = edited.preserved
+    ? typeLabels[edited.preserved.sourceType] || edited.preserved.sourceType
+    : null
+  const preservedSummary = edited.preserved
+    ? [
+        edited.preserved.options?.length ? `${edited.preserved.options.length} 个选项` : null,
+        edited.preserved.blanks?.length ? `${edited.preserved.blanks.length} 个填空位` : null,
+        edited.preserved.answer ? "答案" : null,
+      ].filter(Boolean).join("、")
+    : ""
 
   if (!editing) {
     return (
@@ -132,7 +154,7 @@ export function QuestionEditor({ question, index, quality, onSave, onRemove, onA
                 <Select
                   value={edited.type}
                   onValueChange={(value) => void handleTypeChange(value as QuestionType)}
-                  disabled={applyingTemplate}
+                  disabled={applyingTemplate || saving}
                 >
                   <SelectTrigger className="h-8 w-[118px] text-xs">
                     <SelectValue />
@@ -192,6 +214,24 @@ export function QuestionEditor({ question, index, quality, onSave, onRemove, onA
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4">
+          {recognition && recognition.confidence < 80 && (
+            <div className={`mb-2 text-xs ${recognition.confidence < 50 ? "text-red-600" : "text-amber-600"}`}>
+              {recognition.confidence < 50 ? "识别置信度较低，请核对题型和字段" : "识别结果建议检查"}
+              {recognition.evidence.length > 0 && (
+                <details className="mt-1 text-muted-foreground">
+                  <summary className="cursor-pointer">查看识别依据</summary>
+                  <ul className="mt-1 list-disc pl-5">
+                    {recognition.evidence.map((item, i) => <li key={i}>{item}</li>)}
+                  </ul>
+                </details>
+              )}
+            </div>
+          )}
+          {edited.preserved && (
+            <div className="mb-2 text-xs text-blue-600">
+              已保留原{preservedLabel}的{preservedSummary || "模板数据"}，切回可恢复
+            </div>
+          )}
           <div className="break-words text-sm whitespace-pre-wrap">{edited.stem}</div>
           {isChoice && edited.options && edited.options.length > 0 && (
             <div className="mt-2 pl-4 space-y-1">
@@ -241,7 +281,7 @@ export function QuestionEditor({ question, index, quality, onSave, onRemove, onA
             <Select
               value={edited.type}
               onValueChange={(value) => void handleTypeChange(value as QuestionType)}
-              disabled={applyingTemplate}
+              disabled={applyingTemplate || saving}
             >
               <SelectTrigger className="w-[120px] h-7 text-xs">
                 <SelectValue />
@@ -257,23 +297,29 @@ export function QuestionEditor({ question, index, quality, onSave, onRemove, onA
             <span className="text-xs text-muted-foreground">#{index + 1}</span>
           </div>
           <div className="flex flex-wrap items-center gap-1">
-            <Button variant="ghost" size="sm" onClick={handleSave}>
+            <Button variant="ghost" size="sm" onClick={handleSave} disabled={saving || applyingTemplate}>
               <Save className="h-4 w-4 mr-1" />
               保存
             </Button>
             {onApplyTemplate && (
-              <Button variant="outline" size="sm" onClick={handleApplyTemplate} disabled={applyingTemplate}>
+              <Button variant="outline" size="sm" onClick={handleApplyTemplate} disabled={applyingTemplate || saving}>
                 <Wand2 className="h-4 w-4 mr-1" />
                 {applyingTemplate ? "套用中" : "套用模板"}
               </Button>
             )}
-            <Button variant="ghost" size="sm" onClick={handleCancel} aria-label="取消编辑">
+            <Button variant="ghost" size="sm" onClick={handleCancel} disabled={saving} aria-label="取消编辑">
               <X className="h-4 w-4" />
             </Button>
           </div>
         </div>
       </CardHeader>
       <CardContent className="px-4 pb-4 space-y-3">
+        <fieldset disabled={saving || applyingTemplate} className="space-y-3">
+        {edited.preserved && (
+          <div className="text-xs text-blue-600">
+            已保留原{preservedLabel}的{preservedSummary || "模板数据"}，切回可恢复
+          </div>
+        )}
         {/* 题干 */}
         <div>
           <label className="text-xs font-medium text-muted-foreground mb-1 block">题干</label>
@@ -371,6 +417,7 @@ export function QuestionEditor({ question, index, quality, onSave, onRemove, onA
             className="min-h-[60px] text-xs"
           />
         </div>
+        </fieldset>
       </CardContent>
     </Card>
   )

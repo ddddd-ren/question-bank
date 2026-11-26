@@ -1,3 +1,4 @@
+import { getDueReviewCount, getWeakKnowledgePoints } from "@/lib/db/learning"
 import { NextResponse } from "next/server"
 import { 
   getRecentActivity, 
@@ -10,10 +11,11 @@ import {
   getPracticeTrend
 } from "@/lib/db/queries"
 import { handleApiError } from "@/lib/api-error"
+import { withSession } from "@/lib/auth-route"
 
-export const revalidate = 60
+export const dynamic = "force-dynamic"
 
-export async function GET() {
+export const GET = withSession(async function GET() {
   try {
     const [practiceStats, questionStats, recentActivity, dailyStats, wrongCount, subjectStats, difficultyStats, practiceTrend] = await Promise.all([
       getPracticeStats(),
@@ -27,6 +29,8 @@ export async function GET() {
     ])
 
     return NextResponse.json({
+      dueReviewCount: getDueReviewCount(),
+      weakKnowledgePoints: getWeakKnowledgePoints(),
       practice: practiceStats,
       questions: questionStats,
       recentActivity,
@@ -37,10 +41,10 @@ export async function GET() {
       practiceTrend,
     }, {
       headers: {
-        "Cache-Control": "private, max-age=60, stale-while-revalidate=30",
+        "Cache-Control": "private, no-store",
       },
     })
   } catch (error) {
     return handleApiError(error)
   }
-}
+})

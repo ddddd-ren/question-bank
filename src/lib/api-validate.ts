@@ -58,17 +58,14 @@ export const QuestionQuerySchema = z.object({
   categoryId: z.coerce.number().int().positive().optional(),
   subjectId: z.coerce.number().int().positive().optional(),
   knowledgePointId: z.coerce.number().int().positive().optional(),
+  difficulty: z.coerce.number().int().min(1).max(5).optional(),
   search: z.string().max(200).optional(),
   hasAnswer: QueryBooleanSchema.default(false),
   recentDays: z.coerce.number().int().positive().max(365).optional(),
   stats: QueryBooleanSchema.default(false),
 })
 
-export const PracticeSubmitSchema = z.object({
-  questionId: z.number().int().positive(),
-  answer: z.string().min(1).max(10000),
-  timeSpent: z.number().int().min(0).max(7200).optional(),
-})
+export { PracticeSubmitSchema } from "./practice-input"
 
 export const FavoriteToggleSchema = z.object({
   questionId: z.number().int().positive(),

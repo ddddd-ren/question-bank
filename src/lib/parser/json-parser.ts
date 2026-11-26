@@ -1,4 +1,4 @@
-﻿import crypto from "crypto"
+﻿import { questionFingerprint } from "@/lib/question-fingerprint"
 import type { ExtractedQuestion, QuestionType } from "./question-extractor"
 
 interface JsonQuestion {
@@ -46,11 +46,6 @@ function normalizeOptions(options: string[] | string | undefined): string[] | nu
   })
 }
 
-function generateHash(content: string): string {
-  const normalized = content.replace(/\s+/g, "").toLowerCase()
-  return crypto.createHash("md5").update(normalized).digest("hex")
-}
-
 export function parseJsonQuestions(jsonContent: string): ExtractedQuestion[] {
   try {
     const data = JSON.parse(jsonContent) as JsonTemplate | JsonQuestion[]
@@ -78,7 +73,7 @@ export function parseJsonQuestions(jsonContent: string): ExtractedQuestion[] {
         options: normalizeOptions(q.options),
         answer: q.answer?.trim() || null,
         explanation: q.explanation?.trim() || null,
-        contentHash: generateHash(q.content),
+        contentHash: questionFingerprint({ type: q.type, content: q.content, options: normalizeOptions(q.options) }),
         tags: q.tags || [],
       }))
   } catch (error) {

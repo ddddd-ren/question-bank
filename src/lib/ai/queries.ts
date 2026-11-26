@@ -1,4 +1,4 @@
-﻿import { db } from "@/lib/db"
+import { db } from "@/lib/db"
 import { eq } from "drizzle-orm"
 import { aiConfig, DEFAULT_PROVIDERS, type AiProvider } from "./schema"
 
@@ -93,7 +93,10 @@ export function updateProvider(id: string, data: Partial<Omit<AiProvider, "id">>
 export function activateProvider(id: string): boolean {
   initAiConfigTable()
 
-  db.update(aiConfig).set({ isActive: 0 }).run()
-  const result = db.update(aiConfig).set({ isActive: 1 }).where(eq(aiConfig.id, id)).run()
-  return result.changes > 0
+  return db.$client.transaction(() => {
+    if (!db.select({ id: aiConfig.id }).from(aiConfig).where(eq(aiConfig.id, id)).get()) return false
+    db.update(aiConfig).set({ isActive: 0 }).run()
+    const result = db.update(aiConfig).set({ isActive: 1 }).where(eq(aiConfig.id, id)).run()
+    return result.changes > 0
+  })()
 }

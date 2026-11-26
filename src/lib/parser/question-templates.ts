@@ -7,13 +7,24 @@ export interface BlankSlot {
   answer?: string
 }
 
+export interface PreservedTemplateData {
+  sourceType: QuestionType
+  options?: string[]
+  answer?: string
+  blanks?: BlankSlot[]
+  warnings?: string[]
+}
+
 export interface EditableQuestion {
   type: QuestionType
   stem: string
+  sourcePage?: number
+  tags?: string[]
   options?: string[]
   blanks?: BlankSlot[]
   answer?: string
   explanation?: string
+  preserved?: PreservedTemplateData
 }
 
 export interface QuestionTemplate {
@@ -40,6 +51,16 @@ function normalizeTrueFalseAnswer(answer?: string): string | null {
   if (/^(true|对|是|正确|√)$/i.test(answer.trim())) return "√"
   if (/^(false|错|否|错误|×|x)$/i.test(answer.trim())) return "×"
   return answer.trim()
+}
+
+function validTrueFalseAnswer(answer?: string): string | undefined {
+  const normalized = normalizeTrueFalseAnswer(answer)
+  return normalized === "√" || normalized === "×" ? normalized : undefined
+}
+
+function validChoiceAnswer(answer?: string): string | undefined {
+  const normalized = normalizeChoiceAnswerForTemplate(answer)
+  return normalized && /^[A-Z]+$/.test(normalized) ? normalized : undefined
 }
 
 function compactText(value: string | null | undefined): string | null {
@@ -183,7 +204,7 @@ const trueFalseTemplate: QuestionTemplate = {
   },
 }
 
-const BLANK_MARKER_PATTERN = /____\{\d+\}|[（(]\s*[）)]|【\s*】|\[\s*]|_{3,}/g
+const BLANK_MARKER_PATTERN = /____\{(\d+)\}|[（(]\s*[）)]|【\s*】|\[\s*]|_{3,}/g
 
 const fillBlankTemplate: QuestionTemplate = {
   type: "fill",
@@ -194,22 +215,35 @@ const fillBlankTemplate: QuestionTemplate = {
   toEditable(question) {
     const answers = (question.answer || "").split(/[;；|]/).map((item) => item.trim()).filter(Boolean)
     const blanks: BlankSlot[] = []
-    let blankId = 0
+    const existingIds = Array.from(question.content.matchAll(/____\{(\d+)\}/g), (match) => Number(match[1]))
+    let nextBlankId = Math.max(0, ...existingIds) + 1
+    let answerIndex = 0
 
-    const stem = question.content.replace(BLANK_MARKER_PATTERN, () => {
-        blankId += 1
-        blanks.push({ id: blankId, placeholder: "____", answer: answers[blankId - 1] })
-        return `____{${blankId}}`
+    const stem = question.content.replace(BLANK_MARKER_PATTERN, (marker, numberedId?: string) => {
+        const id = numberedId ? Number(numberedId) : nextBlankId++
+        blanks.push({ id, placeholder: "____", answer: answers[answerIndex] })
+        answerIndex += 1
+        return `____{${id}}`
     })
 
     if (blanks.length === 0 && question.answer) {
       blanks.push({ id: 1, placeholder: "____", answer: question.answer })
     }
 
+    const surplusAnswers = answers.slice(blanks.length)
+    const preserved = surplusAnswers.length > 0
+      ? {
+          sourceType: "fill" as const,
+          answer: surplusAnswers.join("; "),
+          warnings: ["答案数量多于填空位，额外答案已保留"],
+        }
+      : undefined
+
     return {
       ...baseEditable("fill", question),
       stem,
       blanks,
+      preserved,
     }
   },
   fromEditable(editable) {
@@ -300,11 +334,11 @@ export function getTemplate(type: QuestionType): QuestionTemplate {
 }
 
 export function toEditable(question: ExtractedQuestion): EditableQuestion {
-  return getTemplate(question.type).toEditable(question)
+  return { ...getTemplate(question.type).toEditable(question), sourcePage: question.sourcePage, tags: question.tags }
 }
 
 export function fromEditable(editable: EditableQuestion): Partial<ExtractedQuestion> {
-  return getTemplate(editable.type).fromEditable(editable)
+  return { ...getTemplate(editable.type).fromEditable(editable), sourcePage: editable.sourcePage, tags: editable.tags }
 }
 
 export function applyTemplate(editable: EditableQuestion, targetType: QuestionType): EditableQuestion {
@@ -312,16 +346,57 @@ export function applyTemplate(editable: EditableQuestion, targetType: QuestionTy
     ?.map((blank) => blank.answer?.trim())
     .filter((answer): answer is string => Boolean(answer))
 
-  return toEditable({
+  const currentAnswer = blankAnswers && blankAnswers.length > 0
+    ? blankAnswers.join("; ")
+    : compactText(editable.answer) || undefined
+  const preserved: PreservedTemplateData = editable.preserved || {
+    sourceType: editable.type,
+    options: cleanChoiceOptions(editable.options) || undefined,
+    answer: currentAnswer,
+    blanks: editable.blanks?.map((blank) => ({ ...blank })),
+  }
+
+  if (targetType === preserved.sourceType) {
+    const answerWasEdited = Boolean(currentAnswer && currentAnswer !== preserved.answer)
+    const restoredAnswer = answerWasEdited ? currentAnswer : preserved.answer
+    const restored = toEditable({
+      sourcePage: editable.sourcePage, tags: editable.tags,
+      type: targetType,
+      content: editable.stem,
+      options: preserved.options || null,
+      answer: restoredAnswer || null,
+      explanation: compactText(editable.explanation),
+      contentHash: "",
+    })
+
+    return {
+      ...restored,
+      blanks: targetType === "fill" && preserved.blanks
+        ? preserved.blanks.map((blank) => ({ ...blank }))
+        : restored.blanks,
+      preserved,
+    }
+  }
+
+  const targetAnswer = targetType === "truefalse"
+    ? validTrueFalseAnswer(currentAnswer)
+    : targetType === "single" || targetType === "multiple"
+      ? validChoiceAnswer(currentAnswer)
+      : currentAnswer
+
+  const converted = toEditable({
+    sourcePage: editable.sourcePage, tags: editable.tags,
     type: targetType,
     content: editable.stem,
     options: targetType === "single" || targetType === "multiple" ? cleanChoiceOptions(editable.options) : null,
-    answer: blankAnswers && blankAnswers.length > 0 ? blankAnswers.join("; ") : editable.answer || null,
+    answer: targetAnswer || null,
     explanation: compactText(editable.explanation),
     contentHash: "",
   })
+
+  return { ...converted, preserved }
 }
 
 export function renderPreview(question: ExtractedQuestion): string {
-  return getTemplate(question.type).render(question)
+  return getTemplate(question.type).render(question) + (question.tags?.length ? `\n\n标签：${question.tags.join("、")}` : "")
 }

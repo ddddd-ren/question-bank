@@ -4,6 +4,7 @@ import { testApiConnection } from "@/lib/ai/test"
 import { handleApiError } from "@/lib/api-error"
 import type { AiProvider } from "@/lib/ai/schema"
 import { z } from "zod"
+import { withSession } from "@/lib/auth-route"
 
 const TestConfigSchema = z.object({
   baseUrl: z.string().url().optional(),
@@ -11,7 +12,7 @@ const TestConfigSchema = z.object({
   model: z.string().max(100).optional(),
 })
 
-export async function POST(request: NextRequest) {
+export const POST = withSession(async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}))
     const validated = TestConfigSchema.parse(body)
@@ -39,4 +40,4 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})

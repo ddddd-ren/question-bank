@@ -3,8 +3,7 @@
 import React from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Sparkles, Loader2 } from "lucide-react"
-import ReactMarkdown from "react-markdown"
-import remarkGfm from "remark-gfm"
+import { RichContent } from "@/components/rich-content"
 
 interface AiResponseCardProps {
   response: string
@@ -25,11 +24,7 @@ export const AiResponseCard = React.memo(function AiResponseCard({ response, loa
       </CardHeader>
       <CardContent className="px-6 pb-4">
         {response ? (
-          <div className="prose prose-sm max-w-none dark:prose-invert">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {response}
-            </ReactMarkdown>
-          </div>
+          <RichContent content={response} />
         ) : (
           <p className="text-sm text-muted-foreground">正在生成解答...</p>
         )}

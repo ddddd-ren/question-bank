@@ -1,6 +1,7 @@
 "use client"
 
 import React from "react"
+import { RichContent } from "@/components/rich-content"
 import { Button } from "@/components/ui/button"
 import { CheckCircle, XCircle, ChevronRight, ChevronLeft, Sparkles, Loader2, BookOpen, Flame, Brain } from "lucide-react"
 
@@ -15,6 +16,8 @@ interface PracticeResultProps {
   onFinish: () => void
   onAiExplain: () => void
   onAiReview?: () => void
+  onSelfAssess: (correct: boolean) => void
+  saving: boolean
   canPrev: boolean
 }
 
@@ -29,7 +32,7 @@ export const PracticeResult = React.memo(function PracticeResult({
   onFinish,
   onAiExplain,
   onAiReview,
-  canPrev,
+  canPrev, onSelfAssess, saving,
 }: PracticeResultProps) {
   return (
     <div className="space-y-4 animate-slide-up">
@@ -62,9 +65,7 @@ export const PracticeResult = React.memo(function PracticeResult({
               <div>
                 <p className="font-semibold text-red-700">回答错误</p>
                 {correctAnswer && (
-                  <p className="text-xs text-red-600 mt-0.5">
-                    正确答案: <span className="font-bold">{correctAnswer}</span>
-                  </p>
+                  <div className="text-sm mt-1">正确答案：<RichContent content={correctAnswer} /></div>
                 )}
               </div>
             </>
@@ -74,11 +75,9 @@ export const PracticeResult = React.memo(function PracticeResult({
                 <BookOpen className="h-5 w-5 text-white" />
               </div>
               <div>
-                <p className="font-semibold text-blue-700">已提交</p>
+                <p className="font-semibold text-blue-700">已提交，待自评</p>
                 {correctAnswer && (
-                  <p className="text-xs text-blue-600 mt-0.5">
-                    参考答案: <span className="font-bold">{correctAnswer}</span>
-                  </p>
+                  <div className="text-sm mt-1">参考答案：<RichContent content={correctAnswer} /></div>
                 )}
               </div>
             </>
@@ -86,6 +85,11 @@ export const PracticeResult = React.memo(function PracticeResult({
         </div>
       </div>
 
+      {isCorrect === null && <div className="flex items-center gap-2">
+        <span className="text-sm">对照参考答案自评：</span>
+        <Button variant="outline" disabled={saving} onClick={() => onSelfAssess(true)}>我答对了</Button>
+        <Button variant="outline" disabled={saving} onClick={() => onSelfAssess(false)}>还需复习</Button>
+      </div>}
       <div className="flex gap-2">
         <Button variant="outline" onClick={onPrev} disabled={!canPrev} className="flex-1">
           <ChevronLeft className="h-4 w-4 mr-1" />

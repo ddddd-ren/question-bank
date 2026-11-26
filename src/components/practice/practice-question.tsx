@@ -5,8 +5,9 @@ import { Badge } from "@/components/ui/badge"
 import { Eye, EyeOff } from "lucide-react"
 import { typeLabels, typeColors } from "@/lib/constants"
 import { parseOptionText, getOptionLetter } from "@/lib/utils"
+import { normalizeChoiceAnswer } from "@/lib/parser/choice-answer"
 import { CheckCircle, XCircle } from "lucide-react"
-import { CodeBlock } from "@/components/code-block"
+import { RichContent } from "@/components/rich-content"
 
 interface PracticeQuestionProps {
   question: {
@@ -19,8 +20,9 @@ interface PracticeQuestionProps {
   showAnswer: boolean
   onToggleAnswer: () => void
   showResult: boolean
-  selectedAnswer: string | null
-  onAnswer: (answer: string) => void
+    selectedAnswer: string | null
+    onAnswer: (answer: string) => void
+    onSubmitAnswer: () => void
 }
 
 export const PracticeQuestion = React.memo(function PracticeQuestion({
@@ -30,6 +32,7 @@ export const PracticeQuestion = React.memo(function PracticeQuestion({
   showResult,
   selectedAnswer,
   onAnswer,
+  onSubmitAnswer,
 }: PracticeQuestionProps) {
   const hasOptions = question.options && question.options.length > 0
 
@@ -56,21 +59,15 @@ export const PracticeQuestion = React.memo(function PracticeQuestion({
 
       <div className="p-6 space-y-6">
         {/* Question Content */}
-        {question.type === "code" ? (
-          <CodeBlock code={question.content} language="java" />
-        ) : (
-          <div className="text-base leading-relaxed whitespace-pre-wrap">
-            {question.content}
-          </div>
-        )}
+        <RichContent content={question.content} className="text-base leading-relaxed" />
 
         {/* Answer Preview */}
         {showAnswer && question.answer && !showResult && (
           <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20 animate-slide-up">
-            <p className="text-sm text-blue-700">
+            <div className="text-sm text-blue-700">
               <Eye className="inline h-3 w-3 mr-1" />
-              答案: <span className="font-medium">{question.answer}</span>
-            </p>
+              答案：<RichContent content={question.answer} />
+            </div>
           </div>
         )}
 
@@ -80,8 +77,10 @@ export const PracticeQuestion = React.memo(function PracticeQuestion({
             {question.options!.map((opt, idx) => {
               const letter = getOptionLetter(opt)
               const text = parseOptionText(opt)
-              const isSelected = selectedAnswer === letter
-              const isCorrectAnswer = (question.answer || "").toUpperCase().includes(letter.toUpperCase())
+              const isSelected = question.type === "multiple"
+                ? Boolean(selectedAnswer?.includes(letter))
+                : selectedAnswer === letter
+              const isCorrectAnswer = Boolean(normalizeChoiceAnswer(question.answer)?.includes(letter.toUpperCase()))
 
               let extraClass = ""
               if (showResult) {
@@ -125,6 +124,17 @@ export const PracticeQuestion = React.memo(function PracticeQuestion({
               )
             })}
           </div>
+        )}
+
+        {question.type === "multiple" && !showResult && (
+          <button
+            type="button"
+            className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={onSubmitAnswer}
+            disabled={!selectedAnswer}
+          >
+            确认答案
+          </button>
         )}
 
         {/* True/False Buttons */}

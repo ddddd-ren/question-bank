@@ -61,12 +61,14 @@ describe("parsePowerPointBuffer", () => {
     expect(questions[0]).toMatchObject({
       type: "single",
       answer: "C",
+      sourcePage: 1,
     })
     expect(questions[0].content).toContain("JavaScript")
     expect(questions[0].options).toEqual(["A. var", "B. let", "C. const", "D. static"])
     expect(questions[1]).toMatchObject({
       type: "truefalse",
       answer: "√",
+      sourcePage: 2,
     })
   })
 

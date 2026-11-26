@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, ChevronLeft, ChevronRight, Eye, BookOpen, Filter, RefreshCw, Loader2, Download } from "lucide-react"
+import { Search, ChevronLeft, ChevronRight, Eye, BookOpen, Filter, RefreshCw, Loader2, Download, Trash2 } from "lucide-react"
 import { typeLabels, typeColors } from "@/lib/constants"
 import { showToast } from "@/components/toast"
 import { useQuestions } from "@/hooks/use-swr-fetcher"
@@ -20,6 +20,7 @@ export default function BankPage() {
   const [hasAnswer, setHasAnswer] = useState(false)
   const [recentOnly, setRecentOnly] = useState(false)
   const [reparsing, setReparsing] = useState(false)
+  const [clearing, setClearing] = useState(false)
 
   const debouncedSearch = useDebounce(search, 300)
 
@@ -67,6 +68,24 @@ export default function BankPage() {
     }
   }, [mutate])
 
+  const handleClearQuestionBank = useCallback(async () => {
+    if (!window.confirm("确定清空整个题库吗？所有题目、收藏、错题记录和 AI 缓存都将删除，且无法恢复。")) return
+
+    setClearing(true)
+    try {
+      const res = await fetch("/api/questions", { method: "DELETE" })
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error || "清空题库失败")
+      showToast(`已清空 ${result.deleted} 道题目`, "success")
+      handleClearFilters()
+      await mutate()
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "清空题库失败", "error")
+    } finally {
+      setClearing(false)
+    }
+  }, [handleClearFilters, mutate])
+
   if (error) {
     return (
       <div className="space-y-6">
@@ -99,13 +118,17 @@ export default function BankPage() {
             <Download className="h-4 w-4 mr-1" />
             导出 CSV
           </Button>
-          <Button variant="outline" size="sm" onClick={handleReparseAll} disabled={reparsing}>
+          <Button variant="outline" size="sm" onClick={handleReparseAll} disabled={reparsing || clearing}>
             {reparsing ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <RefreshCw className="h-4 w-4 mr-2" />
             )}
             批量重新识别
+          </Button>
+          <Button variant="destructive" size="sm" onClick={handleClearQuestionBank} disabled={clearing || reparsing}>
+            {clearing ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Trash2 className="mr-1 h-4 w-4" />}
+            {clearing ? "清空中..." : "清空题库"}
           </Button>
         </div>
       </div>

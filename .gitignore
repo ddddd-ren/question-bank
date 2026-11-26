@@ -26,6 +26,15 @@
 /data/*.db-wal
 /server.log
 /server.err.log
+/.codex-dev-server.log
+/output/
+/test-preview.json
+/.claude/
+/复习资料*.json
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
 
 # misc
 .DS_Store

@@ -1,11 +1,22 @@
 import { NextRequest, NextResponse } from "next/server"
-import { handleApiError } from "@/lib/api-error"
+import { ApiError, handleApiError } from "@/lib/api-error"
 import { AUTH_COOKIE_NAME } from "@/lib/auth"
 import { createCodeRunClientKey, truncateText } from "@/lib/code-run"
 import { consumeRateLimit } from "@/lib/rate-limit"
 import { z } from "zod"
+import { withSession } from "@/lib/auth-route"
 
-const PISTON_API = "https://emkc.org/api/v2/piston/execute"
+function getPistonEndpoint(): string | null {
+  const value = process.env.PISTON_EXECUTE_URL?.trim()
+  if (!value) return null
+  try {
+    const url = new URL(value)
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.hash) return null
+    return url.href
+  } catch {
+    return null
+  }
+}
 
 const CodeRunSchema = z.object({
   code: z.string().min(1).max(50000),
@@ -88,7 +99,10 @@ function detectLanguage(code: string): string {
   return "python"
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withSession(async function POST(request: NextRequest) {
+  const endpoint = getPistonEndpoint()
+  if (!endpoint) return NextResponse.json({ error: "尚未配置代码运行服务" }, { status: 503 })
+
   try {
     const clientKey = createCodeRunClientKey(request.cookies.get(AUTH_COOKIE_NAME)?.value)
     const rateLimit = consumeRateLimit(clientKey, CODE_RUN_RATE_LIMIT)
@@ -111,17 +125,19 @@ export async function POST(request: NextRequest) {
       language = detectLanguage(code)
     }
 
-    const langConfig = LANGUAGE_MAP[language.toLowerCase()]
-    if (!langConfig) {
+    const key = language.toLowerCase()
+    if (!Object.hasOwn(LANGUAGE_MAP, key)) {
       return NextResponse.json({
         error: `不支持的语言: ${language}`,
         supported: Object.keys(LANGUAGE_MAP)
       }, { status: 400 })
     }
 
-    const response = await fetch(PISTON_API, {
+    const langConfig = LANGUAGE_MAP[key]
+    const token = process.env.PISTON_API_TOKEN?.trim()
+    const result = await fetchPiston(endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(token && { Authorization: `Bearer ${token}` }) },
       body: JSON.stringify({
         language: langConfig.language,
         version: langConfig.version,
@@ -132,17 +148,8 @@ export async function POST(request: NextRequest) {
         run_timeout: 5000,
       }),
       signal: AbortSignal.timeout(12_000),
+      redirect: "error",
     })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      return NextResponse.json({
-        error: "Piston API请求失败",
-        details: truncateText(errorText, 2_000),
-      }, { status: 502 })
-    }
-
-    const result = PistonResultSchema.parse(await response.json())
 
     const output = {
       success: !result.run.stderr,
@@ -160,16 +167,30 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(output)
   } catch (error) {
-    if (error instanceof DOMException && error.name === "TimeoutError") {
-      return NextResponse.json({ error: "代码运行服务响应超时" }, { status: 504 })
-    }
     return handleApiError(error)
+  }
+})
+
+async function fetchPiston(endpoint: string, init: RequestInit) {
+  try {
+    const response = await fetch(endpoint, init)
+    if (response.status === 401 || response.status === 403) {
+      throw new ApiError(502, "代码运行服务拒绝授权，请检查配置")
+    }
+    if (!response.ok) throw new ApiError(502, "代码运行服务暂不可用")
+    return PistonResultSchema.parse(await response.json())
+  } catch (error) {
+    if (error instanceof ApiError) throw error
+    if (error instanceof DOMException && error.name === "TimeoutError") throw new ApiError(504, "代码运行服务响应超时")
+    throw new ApiError(502, "代码运行服务响应异常")
   }
 }
 
-export async function GET() {
+export const GET = withSession(async function GET(request: NextRequest) {
+  void request
   return NextResponse.json({
+    enabled: getPistonEndpoint() !== null,
     languages: Object.keys(LANGUAGE_MAP),
     autoDetect: true,
   })
-}
+})

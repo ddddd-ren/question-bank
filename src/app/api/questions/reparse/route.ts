@@ -5,6 +5,7 @@ import { detectQuestionType } from "@/lib/parser/question-extractor"
 import { handleApiError } from "@/lib/api-error"
 import type { QuestionType } from "@/lib/types"
 import { z } from "zod"
+import { withSession } from "@/lib/auth-route"
 
 const PostRequestSchema = z.object({
   questionId: z.number().int().positive(),
@@ -16,7 +17,7 @@ const PutRequestSchema = z.object({
   type: z.enum(["single", "multiple", "truefalse", "fill", "calculation", "essay", "code"]).optional(),
 })
 
-export async function POST(request: NextRequest) {
+export const POST = withSession(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const validated = PostRequestSchema.parse(body)
@@ -28,6 +29,7 @@ export async function POST(request: NextRequest) {
 
     const editable = toEditable({
       ...question,
+      sourcePage: question.sourcePage ?? undefined,
       options: question.options ? JSON.parse(question.options) : null,
       tags: question.tags ? JSON.parse(question.tags) : null,
     })
@@ -43,9 +45,9 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})
 
-export async function PUT(request: NextRequest) {
+export const PUT = withSession(async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const validated = PutRequestSchema.parse(body)
@@ -73,6 +75,7 @@ export async function PUT(request: NextRequest) {
 
         const parsed = {
           ...question,
+          sourcePage: question.sourcePage ?? undefined,
           options: question.options ? JSON.parse(question.options) : null,
           tags: question.tags ? JSON.parse(question.tags) : null,
         }
@@ -120,4 +123,4 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})

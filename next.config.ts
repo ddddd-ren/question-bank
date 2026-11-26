@@ -1,10 +1,19 @@
 import type { NextConfig } from "next";
 
+const pdfAssets = [
+  "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+  "./node_modules/pdfjs-dist/cmaps/*",
+  "./node_modules/pdfjs-dist/standard_fonts/*",
+  "./node_modules/pdfjs-dist/LICENSE",
+];
+
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   reactStrictMode: true,
   experimental: {
+    // 教材允许 64 MiB，代理还需容纳 multipart 表单字段。
+    proxyClientMaxBodySize: "65mb",
     optimizePackageImports: [
       "lucide-react",
       "@radix-ui/react-dialog",
@@ -14,7 +23,14 @@ const nextConfig: NextConfig = {
       "zustand",
     ],
   },
-  serverExternalPackages: ["better-sqlite3"],
+  serverExternalPackages: ["better-sqlite3", "pdfjs-dist"],
+  outputFileTracingIncludes: {
+    "/api/textbooks/import": pdfAssets,
+    "/api/questions/preview": pdfAssets,
+  },
+  outputFileTracingExcludes: {
+    "/*": ["./data/**/*", "./server*.log", "./.env*"]
+  },
   async headers() {
     return [
       {

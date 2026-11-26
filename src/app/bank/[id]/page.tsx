@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { ArrowLeft, BookOpen, CheckCircle, HelpCircle, Loader2, Pencil, RefreshCw, Save, Sparkles, Trash2, X } from "lucide-react"
+import { RichContent } from "@/components/rich-content"
 import { AiResponseCard } from "@/components/ai-response-card"
+import { useSWRConfig } from "swr"
 import { FavoriteButton } from "@/components/favorite-button"
 import { showToast } from "@/components/toast"
 import { Badge } from "@/components/ui/badge"
@@ -14,6 +16,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { useAiStream } from "@/hooks/use-ai-stream"
+import { useKnowledgePoints, useSubjects } from "@/hooks/use-swr-fetcher"
 import { typeColors, typeLabels } from "@/lib/constants"
 import { parseOptionText, getOptionLetter } from "@/lib/utils"
 import type { QuestionType } from "@/lib/types"
@@ -25,6 +28,13 @@ interface Question {
   options: string[] | null
   answer: string | null
   explanation: string | null
+  tags: string[] | null
+  subjectId: number | null
+  knowledgePointId: number | null
+  difficulty: number | null
+  archivedAt: string | null
+  sourceFile: string | null
+  sourcePage: number | null
   createdAt: string
 }
 
@@ -55,6 +65,7 @@ function normalizeOptions(options: unknown): string[] | null {
 export default function QuestionDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const { mutate } = useSWRConfig()
   const [question, setQuestion] = useState<Question | null>(null)
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
@@ -64,17 +75,26 @@ export default function QuestionDetailPage() {
     options: "",
     answer: "",
     explanation: "",
+    tags: "",
+    subjectId: null as number | null,
+    knowledgePointId: null as number | null,
+    difficulty: null as number | null,
   })
+  const subjectQuery = useSubjects()
+  const pointQuery = useKnowledgePoints(editForm.subjectId ?? undefined)
+  const subjects: { id: number; name: string }[] = subjectQuery.data ?? []
+  const points: { id: number; name: string; subjectId: number }[] = pointQuery.data ?? []
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [reparsing, setReparsing] = useState(false)
 
-  const { response: aiResponse, loading: loadingAi, startStream: startAiStream } = useAiStream()
+  const { response: aiResponse, loading: loadingAi, error: aiError, cancel: cancelAi, startStream: startAiStream } = useAiStream()
 
   const applyQuestion = useCallback((data: Question | Record<string, unknown>) => {
     const parsedQuestion = {
       ...data,
       options: normalizeOptions(data.options),
+      tags: normalizeOptions(data.tags),
     } as Question
 
     setQuestion(parsedQuestion)
@@ -84,6 +104,10 @@ export default function QuestionDetailPage() {
       options: parsedQuestion.options ? parsedQuestion.options.join("\n") : "",
       answer: parsedQuestion.answer || "",
       explanation: parsedQuestion.explanation || "",
+      tags: parsedQuestion.tags?.join("\n") ?? "",
+      subjectId: parsedQuestion.subjectId,
+      knowledgePointId: parsedQuestion.knowledgePointId,
+      difficulty: parsedQuestion.difficulty,
     })
   }, [])
 
@@ -126,36 +150,42 @@ export default function QuestionDetailPage() {
           options: options.length > 0 ? options : null,
           answer: editForm.answer || null,
           explanation: editForm.explanation || null,
+          tags: editForm.tags === (question.tags?.join("\n") ?? "") ? undefined : [...new Set(editForm.tags.split("\n").map(t => t.trim()).filter(Boolean))],
+          subjectId: editForm.subjectId === question.subjectId ? undefined : editForm.subjectId,
+          knowledgePointId: editForm.knowledgePointId === question.knowledgePointId ? undefined : editForm.knowledgePointId,
+          difficulty: editForm.difficulty === question.difficulty ? undefined : editForm.difficulty,
         }),
       })
-      if (!res.ok) throw new Error("保存失败")
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || "保存失败")
 
       const updated = await res.json()
       applyQuestion(updated)
       setEditing(false)
+      void mutate((key) => typeof key === "string" && key.startsWith("/api/"))
       showToast("保存成功", "success")
     } catch (error) {
       showToast(error instanceof Error ? error.message : "保存失败", "error")
     } finally {
       setSaving(false)
     }
-  }, [question, editForm, applyQuestion])
+  }, [question, editForm, applyQuestion, mutate])
 
   const handleDelete = useCallback(async () => {
     if (!question) return
-    if (!confirm("确定要删除这道题目吗？此操作不可撤销。")) return
+    if (!confirm("确定归档这道题目吗？归档后不再出现在题库和练习中，学习历史仍会保留。")) return
 
     setDeleting(true)
     try {
       const res = await fetch(`/api/questions/${question.id}`, { method: "DELETE" })
-      if (!res.ok) throw new Error("删除失败")
-      showToast("删除成功", "success")
+      if (!res.ok) throw new Error("归档失败")
+      showToast("归档成功", "success")
+      await mutate((key) => typeof key === "string" && key.startsWith("/api/"))
       router.push("/bank")
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "删除失败", "error")
+      showToast(error instanceof Error ? error.message : "归档失败", "error")
       setDeleting(false)
     }
-  }, [question, router])
+  }, [question, router, mutate])
 
   const handleReparse = useCallback(async () => {
     if (!question) return
@@ -169,13 +199,14 @@ export default function QuestionDetailPage() {
       if (!res.ok) throw new Error("重新识别失败")
 
       const data = await res.json()
-      setEditForm({
+      setEditForm(previous => ({
+        ...previous,
         type: data.editable.type,
         content: data.editable.stem,
         options: data.editable.options?.join("\n") || "",
         answer: data.editable.answer || "",
         explanation: data.editable.explanation || "",
-      })
+      }))
       setEditing(true)
       showToast("已生成重新识别结果，请确认后保存", "success")
     } catch (error) {
@@ -227,14 +258,14 @@ export default function QuestionDetailPage() {
               <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
                 <Pencil className="h-4 w-4 mr-1" />编辑
               </Button>
-              <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting}>
+              <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting || !!question.archivedAt}>
                 {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4 mr-1" />}
-                删除
+                归档
               </Button>
             </>
           ) : (
             <>
-              <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
+              <Button variant="outline" size="sm" onClick={() => { applyQuestion(question); setEditing(false) }}>
                 <X className="h-4 w-4 mr-1" />取消
               </Button>
               <Button size="sm" onClick={handleSave} disabled={saving}>
@@ -246,6 +277,8 @@ export default function QuestionDetailPage() {
         </div>
       </div>
 
+      {question.archivedAt && <p role="status" className="rounded-lg bg-muted p-3 text-sm">此题已归档，不参与题库和练习；学习历史已保留。</p>}
+
       <Card className="animate-slide-up">
         <CardHeader>
           <div className="flex flex-wrap items-center gap-2">
@@ -253,6 +286,8 @@ export default function QuestionDetailPage() {
               {typeLabels[question.type] || question.type}
             </Badge>
             <span className="text-sm text-muted-foreground">#{question.id}</span>
+            {question.tags?.map(tag => <Badge variant="outline" key={tag}>{tag}</Badge>)}
+            {question.sourceFile && <span className="text-sm text-muted-foreground">来源：{question.sourceFile}{question.sourcePage ? ` · 第 ${question.sourcePage} 页 / 幻灯片` : ""}</span>}
             {question.answer && (
               <Badge variant="outline" className="sm:ml-auto">
                 <CheckCircle className="h-3 w-3 mr-1" />有答案
@@ -279,7 +314,27 @@ export default function QuestionDetailPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                <label className="space-y-1.5 text-sm font-medium">学科
+                  <select aria-label="学科" className="h-9 w-full rounded-md border bg-background px-2" value={editForm.subjectId ?? ""} onChange={e => setEditForm(prev => ({ ...prev, subjectId: Number(e.target.value) || null, knowledgePointId: null }))}>
+                    <option value="">未标注</option>{subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </label>
+                <label className="space-y-1.5 text-sm font-medium">知识点
+                  <select aria-label="知识点" className="h-9 w-full rounded-md border bg-background px-2" value={editForm.knowledgePointId ?? ""} onChange={e => {
+                    const point = points.find(p => p.id === Number(e.target.value))
+                    setEditForm(prev => ({ ...prev, knowledgePointId: point?.id ?? null, subjectId: point?.subjectId ?? prev.subjectId }))
+                  }}><option value="">未标注</option>{points.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+                </label>
+                <label className="space-y-1.5 text-sm font-medium">难度
+                  <select aria-label="难度" className="h-9 w-full rounded-md border bg-background px-2" value={editForm.difficulty ?? ""} onChange={e => setEditForm(prev => ({ ...prev, difficulty: Number(e.target.value) || null }))}>
+                    <option value="">未标注</option>{[1,2,3,4,5].map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </label>
               </div>
+              {(subjectQuery.error || pointQuery.error) && <p role="alert" className="text-sm text-destructive">学科或知识点暂时无法载入。</p>}
+              <label className="block space-y-1.5 text-sm font-medium">题目标签（每行一个）
+                <Textarea value={editForm.tags} placeholder="例如：名词解释" onChange={e => setEditForm(prev => ({ ...prev, tags: e.target.value }))} />
+              </label>
               <div>
                 <label className="text-sm font-medium mb-1.5 block">题目内容</label>
                 <Textarea
@@ -321,7 +376,7 @@ export default function QuestionDetailPage() {
                 <h3 className="font-medium mb-3 flex items-center gap-2">
                   <BookOpen className="h-4 w-4 text-primary" />题目内容
                 </h3>
-                <div className="p-4 rounded-lg bg-muted/50 leading-relaxed">{question.content}</div>
+                <RichContent className="p-4 rounded-lg bg-muted/50 leading-relaxed" content={question.content} />
               </div>
 
               {question.options && question.options.length > 0 && (
@@ -349,7 +404,7 @@ export default function QuestionDetailPage() {
                 <div>
                   <h3 className="font-medium mb-3">参考答案</h3>
                   <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20">
-                    <p className="font-medium text-green-700 dark:text-green-300">{question.answer}</p>
+                    <RichContent className="font-medium text-green-700 dark:text-green-300" content={question.answer} />
                   </div>
                 </div>
               )}
@@ -358,7 +413,7 @@ export default function QuestionDetailPage() {
                 <div>
                   <h3 className="font-medium mb-3">解析</h3>
                   <div className="p-4 rounded-lg bg-muted/50">
-                    <p className="leading-relaxed">{question.explanation}</p>
+                    <RichContent className="leading-relaxed" content={question.explanation} />
                   </div>
                 </div>
               )}
@@ -376,6 +431,8 @@ export default function QuestionDetailPage() {
             </Button>
           </div>
         )}
+        {aiError && <p role="alert" className="text-sm text-destructive">{aiError}</p>}
+        {loadingAi && <Button variant="outline" size="sm" onClick={cancelAi}>停止生成</Button>}
         <AiResponseCard response={aiResponse} loading={loadingAi} />
       </div>
     </div>

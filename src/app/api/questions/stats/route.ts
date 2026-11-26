@@ -6,10 +6,11 @@ import {
   getKnowledgePointStats
 } from "@/lib/db/queries"
 import { handleApiError } from "@/lib/api-error"
+import { withSession } from "@/lib/auth-route"
 
-export const revalidate = 120
+export const dynamic = "force-dynamic"
 
-export async function GET() {
+export const GET = withSession(async function GET() {
   try {
     const [questionStats, subjectStats, difficultyStats, knowledgePointStats] = await Promise.all([
       getQuestionStats(),
@@ -31,4 +32,4 @@ export async function GET() {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})

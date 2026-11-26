@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { handleApiError } from "@/lib/api-error"
+import { withSession } from "@/lib/auth-route"
 
 const JSON_TEMPLATE = {
   version: "1.0",
@@ -54,7 +55,7 @@ const JSON_TEMPLATE = {
   ]
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withSession(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const format = searchParams.get("format") || "json"
@@ -64,9 +65,9 @@ export async function GET(request: NextRequest) {
         "type,content,options,answer,explanation,tags",
         'single,Which is a JS data type?,"A. String|B. Number|C. Boolean|D. All",D,Includes String Number Boolean,"JavaScript|Basics"',
         'multiple,Which are CSS layouts?,"A. Flexbox|B. Grid|C. Float|D. Table",ABCD,All can be used,"CSS|Layout"',
-        'truefalse,JS is statically typed,false,JS is dynamically typed,"JavaScript|Basics"',
-        "fill,HTML uses ____ tag for links,a,Uses a tag,\"HTML,Basics\"",
-        'code,JS function to remove duplicates,"function unique(arr) { return [...new Set(arr)]; }",Uses ES6 Set,"JavaScript|Algorithm"'
+        'truefalse,JS is statically typed,,false,JS is dynamically typed,"JavaScript|Basics"',
+        'fill,HTML uses ____ tag for links,,a,Uses a tag,"HTML|Basics"',
+        'code,JS function to remove duplicates,,"function unique(arr) { return [...new Set(arr)]; }",Uses ES6 Set,"JavaScript|Algorithm"'
       ]
       return new NextResponse(csvLines.join("\n"), {
         headers: {
@@ -87,4 +88,4 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})

@@ -3,6 +3,7 @@ import { createKnowledgePoint, getKnowledgePointById, getKnowledgePoints, getSub
 import { ApiError, handleApiError } from "@/lib/api-error"
 import { parseOptionalNumber } from "@/lib/api-validate"
 import { z } from "zod"
+import { withSession } from "@/lib/auth-route"
 
 const KnowledgePointSchema = z.object({
   name: z.string().min(1).max(80).trim(),
@@ -11,7 +12,7 @@ const KnowledgePointSchema = z.object({
   parentId: z.number().int().positive().nullable().optional(),
 })
 
-export async function GET(request: NextRequest) {
+export const GET = withSession(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const subjectId = parseOptionalNumber(searchParams.get("subjectId"))
@@ -24,9 +25,9 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})
 
-export async function POST(request: NextRequest) {
+export const POST = withSession(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const validated = KnowledgePointSchema.parse(body)
@@ -56,4 +57,4 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createSubject, getSubjects } from "@/lib/db/queries"
 import { handleApiError } from "@/lib/api-error"
 import { z } from "zod"
+import { withSession } from "@/lib/auth-route"
 
 const SubjectSchema = z.object({
   name: z.string().min(1).max(60).trim(),
@@ -9,7 +10,7 @@ const SubjectSchema = z.object({
   description: z.string().max(500).trim().nullable().optional(),
 })
 
-export async function GET() {
+export const GET = withSession(async function GET() {
   try {
     const subjects = await getSubjects()
     return NextResponse.json(subjects, {
@@ -20,9 +21,9 @@ export async function GET() {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})
 
-export async function POST(request: NextRequest) {
+export const POST = withSession(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const validated = SubjectSchema.parse(body)
@@ -36,4 +37,4 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})

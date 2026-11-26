@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getMistakes, deletePracticeRecord } from "@/lib/db/queries"
+import { getMistakes } from "@/lib/db/queries"
 import { parseJsonArray } from "@/lib/db/serialize"
 import { handleApiError } from "@/lib/api-error"
 import { parsePagination } from "@/lib/api-validate"
+import { setLearningStatus } from "@/lib/db/learning"
 import { z } from "zod"
+import { withSession } from "@/lib/auth-route"
 
 const DeleteRequestSchema = z.object({
-  id: z.number().int().positive(),
+  questionId: z.number().int().positive(),
+  status: z.enum(["mastered", "archived"]),
 })
 
-export async function GET(request: NextRequest) {
+export const GET = withSession(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const { page, pageSize } = parsePagination(searchParams)
@@ -28,16 +31,16 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})
 
-export async function DELETE(request: NextRequest) {
+export const PATCH = withSession(async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
     const validated = DeleteRequestSchema.parse(body)
 
-    await deletePracticeRecord(validated.id)
+    setLearningStatus(validated.questionId, validated.status)
     return NextResponse.json({ success: true })
   } catch (error) {
     return handleApiError(error)
   }
-}
+})

@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server"
 import { getQuestionStats } from "@/lib/db/queries"
 import { handleApiError } from "@/lib/api-error"
+import { withSession } from "@/lib/auth-route"
 
-export const revalidate = 60
+export const dynamic = "force-dynamic"
 
-export async function GET() {
+export const GET = withSession(async function GET() {
   try {
     const stats = await getQuestionStats()
 
@@ -20,4 +21,4 @@ export async function GET() {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})

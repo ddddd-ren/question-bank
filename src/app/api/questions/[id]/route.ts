@@ -4,21 +4,22 @@ import { serializeQuestion, stringifyJsonArray } from "@/lib/db/serialize"
 import { handleApiError } from "@/lib/api-error"
 import { ApiError } from "@/lib/api-error"
 import { z } from "zod"
+import { withSession } from "@/lib/auth-route"
 
 const QuestionUpdateSchema = z.object({
   content: z.string().min(1).max(10000).optional(),
   type: z.enum(["single", "multiple", "truefalse", "fill", "calculation", "essay", "code"]).optional(),
-  options: z.array(z.string()).max(20).optional(),
+  options: z.array(z.string()).max(20).nullable().optional(),
   answer: z.string().max(5000).nullable().optional(),
   explanation: z.string().max(10000).nullable().optional(),
-  difficulty: z.number().int().min(1).max(5).optional(),
+  difficulty: z.number().int().min(1).max(5).nullable().optional(),
   tags: z.array(z.string().max(50)).max(10).optional(),
   categoryId: z.number().int().positive().nullable().optional(),
   subjectId: z.number().int().positive().nullable().optional(),
   knowledgePointId: z.number().int().positive().nullable().optional(),
 })
 
-export async function GET(
+export const GET = withSession(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -36,15 +37,15 @@ export async function GET(
 
     return NextResponse.json(serializeQuestion(question), {
       headers: {
-        "Cache-Control": "private, max-age=60, stale-while-revalidate=30",
+        "Cache-Control": "private, no-store",
       },
     })
   } catch (error) {
     return handleApiError(error)
   }
-}
+})
 
-export async function PUT(
+export const PUT = withSession(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -59,8 +60,8 @@ export async function PUT(
 
     const updated = await updateQuestion(numId, {
       ...validated,
-      options: stringifyJsonArray(validated.options),
-      tags: stringifyJsonArray(validated.tags),
+      options: validated.options === undefined ? undefined : stringifyJsonArray(validated.options),
+      tags: validated.tags === undefined ? undefined : stringifyJsonArray(validated.tags),
     })
 
     if (!updated) {
@@ -71,9 +72,9 @@ export async function PUT(
   } catch (error) {
     return handleApiError(error)
   }
-}
+})
 
-export async function DELETE(
+export const DELETE = withSession(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -93,4 +94,4 @@ export async function DELETE(
   } catch (error) {
     return handleApiError(error)
   }
-}
+})

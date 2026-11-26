@@ -5,6 +5,7 @@ export const AUTH_COOKIE_NAME = "question_bank_session"
 const PUBLIC_PATHS = new Set([
   "/login",
   "/api/auth/login",
+  "/api/health",
   "/favicon.ico",
   "/icon.png",
   "/apple-icon.png",

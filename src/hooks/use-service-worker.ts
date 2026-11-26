@@ -32,3 +32,18 @@ export function useServiceWorker() {
     registerSW()
   }, [])
 }
+
+export async function clearQuestionBankCaches() {
+  if (typeof window === "undefined") return
+  try {
+    localStorage.removeItem("question-bank:practice-draft:v1")
+    window.dispatchEvent(new Event("question-bank:session-cleared"))
+  } catch { /* 浏览器禁用本地存储时仍继续清理缓存。 */ }
+  if (!("caches" in window)) return
+  const cacheNames = await caches.keys()
+  await Promise.all(
+    cacheNames
+      .filter((name) => name.startsWith("question-bank-"))
+      .map((name) => caches.delete(name)),
+  )
+}

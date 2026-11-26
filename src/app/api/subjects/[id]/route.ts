@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { deleteSubject, getSubjectById, getSubjectUsage, updateSubject } from "@/lib/db/queries"
 import { ApiError, handleApiError } from "@/lib/api-error"
+import { withSession } from "@/lib/auth-route"
 
 function normalizeSubjectPatch(body: Record<string, unknown>) {
   const data: {
@@ -26,7 +27,7 @@ function normalizeSubjectPatch(body: Record<string, unknown>) {
   return data
 }
 
-export async function PATCH(
+export const PATCH = withSession(async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -62,9 +63,9 @@ export async function PATCH(
   } catch (error) {
     return handleApiError(error)
   }
-}
+})
 
-export async function DELETE(
+export const DELETE = withSession(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -99,4 +100,4 @@ export async function DELETE(
   } catch (error) {
     return handleApiError(error)
   }
-}
+})

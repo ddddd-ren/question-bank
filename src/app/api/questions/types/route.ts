@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server"
 import { QUESTION_TYPES } from "@/lib/types"
 import { typeLabels } from "@/lib/constants"
+import { withSession } from "@/lib/auth-route"
 
 export const revalidate = 3600
 
-export async function GET() {
+export const GET = withSession(async function GET() {
   const types = QUESTION_TYPES.map(type => ({
     value: type,
     label: typeLabels[type] || type,
@@ -18,4 +19,4 @@ export async function GET() {
       "Cache-Control": "public, max-age=3600",
     },
   })
-}
+})

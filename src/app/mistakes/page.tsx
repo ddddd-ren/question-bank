@@ -1,27 +1,17 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
+import { useState } from "react"
+import { showToast } from "@/components/toast"
 import { BookOpen, ChevronLeft, ChevronRight, Clock, Eye, RotateCcw, Search, XCircle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { showToast } from "@/components/toast"
 import { typeColors, typeLabels } from "@/lib/constants"
-
-interface MistakeRecord {
-  id: number
-  questionId: number
-  userAnswer: string
-  timeSpent: number
-  createdAt: string
-  questionContent: string
-  questionType: string
-  questionOptions: string[] | null
-  questionAnswer: string | null
-}
+import { usePaginatedFilter } from "@/hooks/use-paginated-filter"
+import { useMistakes } from "@/hooks/use-swr-fetcher"
 
 const questionTypeOptions = [
   { value: "all", label: "全部题型" },
@@ -35,49 +25,39 @@ const questionTypeOptions = [
 ]
 
 export default function MistakesPage() {
-  const [mistakes, setMistakes] = useState<MistakeRecord[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [loading, setLoading] = useState(true)
-  const [typeFilter, setTypeFilter] = useState("all")
-  const [search, setSearch] = useState("")
+  const {
+    page,
+    setPage,
+    typeFilter,
+    setTypeFilter,
+    searchInput,
+    setSearchInput,
+    committedSearch,
+    clearFilters,
+  } = usePaginatedFilter()
+  const [updating, setUpdating] = useState<number | null>(null)
+  const { data, error, isLoading, mutate } = useMistakes({
+    page,
+    pageSize: 20,
+    type: typeFilter,
+    search: committedSearch,
+  })
+  const mistakes = data?.data ?? []
+  const total = data?.total ?? 0
+  const totalPages = data?.totalPages ?? 1
 
-  const fetchMistakes = useCallback(async () => {
-    setLoading(true)
+  const markStatus = async (questionId: number, status: "mastered" | "archived") => {
+    setUpdating(questionId)
     try {
-      const params = new URLSearchParams({ page: page.toString(), pageSize: "20" })
-      if (typeFilter && typeFilter !== "all") params.set("type", typeFilter)
-      if (search) params.set("search", search)
+      const response = await fetch("/api/mistakes", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ questionId, status }) })
+      if (!response.ok) throw new Error("更新失败")
+      await mutate()
+      showToast(status === "mastered" ? "已标记掌握，保留历史并安排后续复习" : "已归档，答题历史保留", "success")
+    } catch { showToast("更新失败，请重试", "error") }
+    finally { setUpdating(null) }
+  }
 
-      const res = await fetch(`/api/mistakes?${params}`)
-      if (!res.ok) throw new Error("获取错题失败")
-
-      const data = await res.json()
-      setMistakes(data.data)
-      setTotal(data.total)
-      setTotalPages(data.totalPages)
-    } catch {
-      showToast("获取错题失败", "error")
-    } finally {
-      setLoading(false)
-    }
-  }, [page, typeFilter, search])
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void fetchMistakes()
-    }, 0)
-    return () => window.clearTimeout(timer)
-  }, [fetchMistakes])
-
-  const clearFilters = useCallback(() => {
-    setSearch("")
-    setTypeFilter("all")
-    setPage(1)
-  }, [])
-
-  if (loading) {
+  if (isLoading && !data) {
     return (
       <div className="space-y-6">
         <div className="page-header">
@@ -92,7 +72,7 @@ export default function MistakesPage() {
     )
   }
 
-  const hasFilters = Boolean(search || typeFilter !== "all")
+  const hasFilters = Boolean(searchInput || typeFilter !== "all")
 
   return (
     <div className="space-y-6">
@@ -118,9 +98,8 @@ export default function MistakesPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="搜索错题内容..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && setPage(1)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 className="pl-9"
               />
             </div>
@@ -144,6 +123,8 @@ export default function MistakesPage() {
           </div>
         </CardContent>
       </Card>
+
+      {error && <p role="alert" className="text-sm text-destructive">获取错题失败，请稍后重试</p>}
 
       <div className="flex items-center justify-between">
         <span className="text-sm text-muted-foreground">
@@ -205,6 +186,10 @@ export default function MistakesPage() {
                         <span className="text-green-600">正确答案：{mistake.questionAnswer}</span>
                       )}
                     </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    <Button variant="outline" size="sm" disabled={updating !== null} onClick={() => markStatus(mistake.questionId, "mastered")}>已掌握</Button>
+                    <Button variant="ghost" size="sm" disabled={updating !== null} onClick={() => markStatus(mistake.questionId, "archived")}>归档</Button>
                   </div>
                   <Button asChild variant="ghost" size="sm" aria-label="查看题目详情">
                     <Link href={`/bank/${mistake.questionId}`}>

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { 
   getPracticeStats,
   getDailyStats,
@@ -7,12 +7,13 @@ import {
 } from "@/lib/db/queries"
 import { handleApiError } from "@/lib/api-error"
 import { z } from "zod"
+import { withSession } from "@/lib/auth-route"
 
 const StatsQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(365).optional().default(30),
 })
 
-export async function GET(request: Request) {
+export const GET = withSession(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const query = StatsQuerySchema.parse(Object.fromEntries(searchParams.entries()))
@@ -37,4 +38,4 @@ export async function GET(request: Request) {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})

@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useEffect, useState, useCallback } from "react"
+import { Suspense, useEffect, useState, useCallback, useRef } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { Card } from "@/components/ui/card"
@@ -11,8 +11,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RotateCcw, Loader2, Target, Flame, Play, Terminal, Zap, AlertTriangle } from "lucide-react"
 import { useAiStream } from "@/hooks/use-ai-stream"
 import { usePracticeSession } from "@/hooks/use-practice-session"
-import { showToast } from "@/components/toast"
+import { useSubjects, useKnowledgePoints } from "@/hooks/use-swr-fetcher"
+import { RichContent } from "@/components/rich-content"
+import { fetchJson } from "@/lib/utils"
 import dynamic from "next/dynamic"
+import useSWR from "swr"
 
 const AiResponseCard = dynamic(() => import("@/components/ai-response-card").then(m => ({ default: m.AiResponseCard })), {
   loading: () => <div className="skeleton h-32" />,
@@ -53,12 +56,23 @@ function PracticeContent() {
 
   const [typeFilter, setTypeFilter] = useState<string>("all")
 
+  const [subjectId, setSubjectId] = useState(searchParams.get("subjectId") || "all")
+  const [knowledgePointId, setKnowledgePointId] = useState(searchParams.get("knowledgePointId") || "all")
+  const [difficulty, setDifficulty] = useState("all")
+  const [questionCount, setQuestionCount] = useState("20")
+  const [unansweredFirst, setUnansweredFirst] = useState(false)
+  const { data: subjects = [] } = useSubjects()
+  const { data: knowledgePoints = [] } = useKnowledgePoints(subjectId === "all" ? undefined : Number(subjectId))
+  const initialized = useRef<string | null>(null)
+  const routeKey = searchParams.toString()
+  const hintProgress = useRef({ questionId: 0, level: 0 })
+
   // Code execution state
   const [codeOutput, setCodeOutput] = useState<string>("")
   const [codeRunning, setCodeRunning] = useState(false)
   const [codeError, setCodeError] = useState<string | null>(null)
 
-  const { response: aiResponse, loading: loadingAi, startStream: startAiStream, reset: resetAi } = useAiStream()
+  const { response: aiResponse, error: aiError, loading: loadingAi, startStream: startAiStream, reset: resetAi, cancel: cancelAi } = useAiStream()
 
   const {
     questions,
@@ -74,6 +88,7 @@ function PracticeContent() {
     loading,
     loadError,
     streak,
+    gradedCount, storageError, saving, unsavedCount, retrySave, selfAssess, goTo,
     totalCorrect,
     records,
     showReview,
@@ -82,30 +97,50 @@ function PracticeContent() {
     setCurrentQuestionTime,
     fetchQuestions: fetchSessionQuestions,
     submitAnswer,
+    selectAnswer,
     goNext,
     goPrev,
     toggleAnswer,
     toggleReview,
   } = usePracticeSession()
 
-  const fetchQuestions = useCallback(async () => {
-    const success = await fetchSessionQuestions(typeFilter, practiceMode)
+  const { data: codeCapability, error: codeCapabilityError } = useSWR<{ enabled: boolean }>(
+    currentQuestion?.type === "code" ? "/api/code/run" : null,
+    fetchJson,
+  )
+
+  const fetchQuestions = useCallback(async (resume = false) => {
+    const success = await fetchSessionQuestions(typeFilter, practiceMode, {
+      subjectId: subjectId === "all" ? undefined : Number(subjectId),
+      knowledgePointId: knowledgePointId === "all" ? undefined : Number(knowledgePointId),
+      difficulty: difficulty === "all" ? undefined : Number(difficulty),
+      count: Number(questionCount), unansweredFirst,
+    }, resume)
     if (success) {
       resetAi()
     }
-  }, [fetchSessionQuestions, typeFilter, practiceMode, resetAi])
+  }, [fetchSessionQuestions, typeFilter, practiceMode, resetAi, subjectId, knowledgePointId, difficulty, questionCount, unansweredFirst])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void fetchQuestions()
+      if (initialized.current !== routeKey) { initialized.current = routeKey; void fetchQuestions(true) }
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [fetchQuestions])
+  }, [fetchQuestions, routeKey])
 
   const handleAnswer = useCallback((answer: string) => {
     if (showResult || !currentQuestion) return
+    if (currentQuestion.type === "multiple") {
+      selectAnswer(answer)
+      return
+    }
     submitAnswer(answer, currentQuestionTime)
-  }, [showResult, currentQuestion, submitAnswer, currentQuestionTime])
+  }, [showResult, currentQuestion, selectAnswer, submitAnswer, currentQuestionTime])
+
+  const handleMultipleSubmit = useCallback(() => {
+    if (!selectedAnswer || showResult || currentQuestion?.type !== "multiple") return
+    submitAnswer(selectedAnswer, currentQuestionTime)
+  }, [currentQuestion, currentQuestionTime, selectedAnswer, showResult, submitAnswer])
 
   const handleTextSubmit = useCallback(() => {
     if (showResult || !currentQuestion || !textAnswer.trim()) return
@@ -120,6 +155,7 @@ function PracticeContent() {
 
   const handleNext = useCallback(() => {
     goNext()
+    hintProgress.current = { questionId: 0, level: 0 }
     resetAi()
     setCodeOutput("")
     setCodeError(null)
@@ -127,6 +163,7 @@ function PracticeContent() {
 
   const handlePrev = useCallback(() => {
     goPrev()
+    hintProgress.current = { questionId: 0, level: 0 }
     resetAi()
     setCodeOutput("")
     setCodeError(null)
@@ -164,7 +201,7 @@ function PracticeContent() {
   }, [currentQuestion, startAiStream])
 
   const handleRunCode = useCallback(async () => {
-    if (!textAnswer.trim()) return
+    if (!codeCapability?.enabled || !textAnswer.trim()) return
 
     setCodeRunning(true)
     setCodeOutput("")
@@ -194,21 +231,17 @@ function PracticeContent() {
     } finally {
       setCodeRunning(false)
     }
-  }, [textAnswer])
+  }, [codeCapability?.enabled, textAnswer])
 
   const handleJumpToQuestion = useCallback((questionId: number) => {
     const idx = questions.findIndex(q => q.id === questionId)
-    if (idx !== -1) {
-      // Navigate to question and show result
-      // The hook doesn't expose direct index setter, so we use goNext/goPrev pattern
-      // For simplicity, restart and let user navigate
-      showToast("请使用上一题/下一题按钮导航", "info")
-    }
-  }, [questions])
+    if (idx !== -1) { hintProgress.current = { questionId: 0, level: 0 }; goTo(idx); resetAi(); setCodeOutput(""); setCodeError(null) }
+  }, [questions, goTo, resetAi])
 
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).closest("input,textarea,select,button,[contenteditable=true]")) return
       if (showResult && (e.key === "Enter" || e.key === " ") && !e.shiftKey) {
         e.preventDefault()
         handleNext()
@@ -226,6 +259,36 @@ function PracticeContent() {
     return () => window.removeEventListener("keydown", handler)
   }, [showResult, currentQuestion, handleAnswer, handleNext])
 
+  const filterControls = <>
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={subjectId} onValueChange={value => { setSubjectId(value); setKnowledgePointId("all") }}>
+          <SelectTrigger className="w-40" aria-label="学科"><SelectValue placeholder="学科" /></SelectTrigger>
+          <SelectContent><SelectItem value="all">全部学科</SelectItem>{subjects.map((s: {id:number;name:string}) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}</SelectContent>
+        </Select>
+        <Select value={knowledgePointId} onValueChange={setKnowledgePointId}>
+          <SelectTrigger className="w-44" aria-label="知识点"><SelectValue placeholder="知识点" /></SelectTrigger>
+          <SelectContent><SelectItem value="all">全部知识点</SelectItem>{knowledgePoints.map((k: {id:number;name:string}) => <SelectItem key={k.id} value={String(k.id)}>{k.name}</SelectItem>)}</SelectContent>
+        </Select>
+        <Select value={difficulty} onValueChange={setDifficulty}>
+          <SelectTrigger className="w-32" aria-label="难度"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="all">全部难度</SelectItem>{[1,2,3,4,5].map(n => <SelectItem key={n} value={String(n)}>难度 {n}</SelectItem>)}</SelectContent>
+        </Select>
+        <Select value={questionCount} onValueChange={setQuestionCount}>
+          <SelectTrigger className="w-24" aria-label="题数"><SelectValue /></SelectTrigger>
+          <SelectContent>{[5,10,20,50,100].map(n => <SelectItem key={n} value={String(n)}>{n} 题</SelectItem>)}</SelectContent>
+        </Select>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={unansweredFirst} onChange={e => setUnansweredFirst(e.target.checked)} />未做优先</label>
+        <span className="text-xs text-muted-foreground">筛选用于下一组练习</span>
+      </div>
+      {loadError && <p role="alert" className="text-sm text-destructive">{loadError}{questions.length > 0 ? "，当前练习已保留。" : "。"}</p>}
+  </>
+  const saveStatus = <>
+      {(unsavedCount > 0 || storageError) && <div role="status" className="flex items-center gap-3 text-sm">
+        <span>{storageError ? "本地草稿保存失败，刷新可能丢失进度。" : `${unsavedCount} 份答案尚未同步。`}</span>
+        <Button variant="outline" size="sm" disabled={saving} onClick={retrySave}>{saving ? "保存中" : "重试保存"}</Button>
+      </div>}
+  </>
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -241,8 +304,9 @@ function PracticeContent() {
     const isLoadError = Boolean(loadError)
 
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Card className="max-w-md w-full">
+      <div className="space-y-5">
+        {filterControls}
+        <Card className="max-w-md w-full mx-auto">
           <div className="p-8 text-center">
             {isLoadError ? (
               <AlertTriangle className="h-16 w-16 mx-auto text-destructive/70 mb-4" />
@@ -250,7 +314,7 @@ function PracticeContent() {
               <Target className="h-16 w-16 mx-auto text-muted-foreground/30 mb-4" />
             )}
             <h2 className="text-xl font-semibold mb-2">
-              {isLoadError ? "题目加载失败" : practiceMode === "mistakes" ? "没有错题" : "暂无题目"}
+              {isLoadError ? "暂无可用练习" : practiceMode === "mistakes" ? "没有错题" : "暂无题目"}
             </h2>
             <p className="text-muted-foreground mb-6">
               {isLoadError ? loadError : practiceMode === "mistakes" ? "太棒了，你没有错题需要重练！" : "请先导入一些题目开始练习"}
@@ -278,12 +342,12 @@ function PracticeContent() {
 
   if (showReview) {
     return (
-      <PracticeReview
+      <div className="space-y-4">{saveStatus}<PracticeReview
         records={records}
         totalCorrect={totalCorrect}
         onRestart={handleRestart}
         onJumpToQuestion={handleJumpToQuestion}
-      />
+      /></div>
     )
   }
 
@@ -297,7 +361,7 @@ function PracticeContent() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">{practiceMode === "mistakes" ? "错题重练" : "刷题练习"}</h1>
+          <h1 className="text-2xl font-bold">{practiceMode === "mistakes" ? "错题重练" : practiceMode === "due" ? "今日复习" : "刷题练习"}</h1>
           <p className="text-muted-foreground text-sm mt-1">
             {practiceMode === "mistakes" ? "消灭错题 " : ""}第 {currentIndex + 1} / {questions.length} 题
             {streak > 1 && (
@@ -309,7 +373,7 @@ function PracticeContent() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <PracticeTimer isRunning={timerRunning} onTimeUpdate={setCurrentQuestionTime} />
+          <PracticeTimer key={currentQuestion.id} isRunning={timerRunning} onTimeUpdate={setCurrentQuestionTime} />
           <Select value={typeFilter} onValueChange={setTypeFilter}>
             <SelectTrigger className="w-[120px] h-8 text-xs">
               <SelectValue placeholder="题型" />
@@ -324,17 +388,19 @@ function PracticeContent() {
             </SelectContent>
           </Select>
           <Button variant="outline" size="sm" className="h-8" onClick={handleRestart}>
-            <RotateCcw className="h-3 w-3" />
+            <RotateCcw className="h-3 w-3 mr-1" />开始新一组
           </Button>
         </div>
       </div>
 
+      {filterControls}
+      {saveStatus}
       {/* Progress */}
       <div className="space-y-1">
         <Progress value={progress} className="h-1.5" />
         <div className="flex justify-between text-xs text-muted-foreground">
           <span>{Math.round(progress)}%</span>
-          <span>{totalCorrect}/{currentIndex + (showResult ? 1 : 0)} 正确</span>
+          <span>{totalCorrect}/{gradedCount} 已判分正确 · {records.length - gradedCount} 待判分</span>
         </div>
       </div>
 
@@ -347,6 +413,7 @@ function PracticeContent() {
           showResult={showResult}
           selectedAnswer={selectedAnswer}
           onAnswer={handleAnswer}
+          onSubmitAnswer={handleMultipleSubmit}
         />
 
         <div className="px-6 pb-6 space-y-4">
@@ -394,20 +461,20 @@ function PracticeContent() {
                     />
                   </div>
 
+                  {codeCapability?.enabled === false && <p role="status" className="text-sm text-muted-foreground">代码运行服务未配置</p>}
+                  {codeCapabilityError && !codeCapability && <p role="status" className="text-sm text-muted-foreground">暂时无法确认代码运行服务状态</p>}
                   <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={handleRunCode}
-                      disabled={!textAnswer.trim() || codeRunning}
-                      className="flex-1"
-                    >
-                      {codeRunning ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Play className="h-4 w-4 mr-2" />
-                      )}
-                      {codeRunning ? "运行中..." : "运行代码"}
-                    </Button>
+                    {codeCapability?.enabled && (
+                      <Button
+                        variant="outline"
+                        onClick={handleRunCode}
+                        disabled={!textAnswer.trim() || codeRunning}
+                        className="flex-1"
+                      >
+                        {codeRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
+                        {codeRunning ? "运行中..." : "运行代码"}
+                      </Button>
+                    )}
                     {!showResult && (
                       <Button onClick={handleTextSubmit} disabled={!textAnswer.trim()} className="flex-1">
                         <Zap className="h-4 w-4 mr-2" />
@@ -470,15 +537,28 @@ function PracticeContent() {
               onAiExplain={handleAiExplain}
               onAiReview={handleAiReview}
               canPrev={currentIndex > 0}
+              onSelfAssess={selfAssess}
+              saving={saving}
             />
           )}
         </div>
       </Card>
 
+      {showResult && currentQuestion.explanation && <Card className="p-5"><h2 className="font-medium mb-2">题目解析</h2><RichContent content={currentQuestion.explanation} /></Card>}
+      {!showResult && <div className="flex flex-wrap gap-2">
+        <Button variant="outline" onClick={handlePrev} disabled={currentIndex === 0}>上一题</Button>
+        <Button variant="outline" disabled={loadingAi} onClick={() => {
+          const level = hintProgress.current.questionId === currentQuestion.id ? Math.min(3, hintProgress.current.level + 1) : 1
+          hintProgress.current = { questionId: currentQuestion.id, level }
+          void startAiStream({ questionId: currentQuestion.id, question: currentQuestion.content, type: currentQuestion.type, mode: "hint", hintLevel: level as 1 | 2 | 3 })
+        }}>给我提示</Button>
+      </div>}
+      {loadingAi && <Button variant="outline" onClick={cancelAi}>停止生成</Button>}
       {/* Keyboard Hints */}
       {!showResult && <KeyboardHints />}
 
       {/* AI Response */}
+      {aiError && <p role="alert" className="text-sm text-destructive">{aiError}</p>}
       <AiResponseCard response={aiResponse} loading={loadingAi} />
     </div>
   )

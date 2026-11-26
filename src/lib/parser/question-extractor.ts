@@ -1,9 +1,13 @@
 import mammoth from "mammoth"
-import crypto from "crypto"
 import JSZip from "jszip"
 import { normalizeChoiceAnswer } from "./choice-answer"
 import { shouldFilterContent } from "./content-filter"
 import { normalizeQuestion } from "./question-normalizer"
+import { normalizeParagraphs } from "./structure-normalizer"
+import { SECTION_SCORE_NOTE, segmentQuestions } from "./question-segmenter"
+import { extractFields } from "./field-extractor"
+import { classifyQuestion } from "./type-classifier"
+import type { RecognitionDiagnostic, StructuredParagraph } from "./recognition-types"
 
 import { type QuestionType } from "@/lib/types"
 export type { QuestionType }
@@ -16,6 +20,8 @@ export interface ExtractedQuestion {
   explanation: string | null
   contentHash: string
   tags?: string[]
+  diagnostic?: RecognitionDiagnostic
+  sourcePage?: number
 }
 
 // Type mapping from Chinese section headers
@@ -37,6 +43,7 @@ const TYPE_MAP: Record<string, QuestionType> = {
   "程序题": "code",
   "程序": "code",
   "名词解释": "essay",
+  "名词解释题": "essay",
   "设计题": "essay",
   "应用题": "essay",
   "简答题": "essay",
@@ -58,23 +65,7 @@ const TYPE_MAP: Record<string, QuestionType> = {
 
 const ANSWER_LABEL_SOURCE = String.raw`(?:[【\[]\s*)?(?:参考[ \t]*答案|正确[ \t]*答案|标准[ \t]*答案|答案|正确[ \t]*选项|选项[ \t]*答案|Answer|Ans)(?:\s*[】\]])?`
 const EXPLANATION_LABEL_SOURCE = String.raw`(?:答案[ \t]*解析|解析|详解|解答|说明|分析)`
-const QUESTION_TYPE_SOURCE = "单项选择题|多项选择题|不定项选择题|单选题|多选题|判断题|填空题|计算题|论述题|编程题|程序设计题|编程|程序填空|程序题|选择题|名词解释|设计题|应用题|简答题|问答题|分析题|判断|选择|填空|计算|论述|应用|简答|问答|程序|分析"
-
-// Generate content hash for deduplication
-function generateHash(content: string): string {
-  const punctuationMap: Record<string, string> = {
-    "，": ",", "。": ".", "、": ",", "；": ";", "：": ":",
-    "？": "?", "！": "!", "“": "\"", "”": "\"",
-    "‘": "\'", "’": "\'", "【": "[", "】": "]",
-    "（": "(", "）": ")", "《": "<", "》": ">",
-  }
-
-  const normalized = content
-    .replace(/\s+/g, "")
-    .replace(/[，。、；：？！“”‘’【】（）《》]/g, (match) => punctuationMap[match] || match)
-    .toLowerCase()
-  return crypto.createHash("md5").update(normalized).digest("hex")
-}
+const QUESTION_TYPE_SOURCE = "单项选择题|多项选择题|不定项选择题|单选题|多选题|判断题|填空题|计算题|论述题|编程题|程序设计题|编程|程序填空|程序题|选择题|名词解释题|名词解释|设计题|应用题|简答题|问答题|分析题|判断|选择|填空|计算|论述|应用|简答|问答|程序|分析"
 
 function escapeHtml(text: string): string {
   return text
@@ -659,30 +650,36 @@ export function detectQuestionType(content: string, options: string[], sectionTy
   }
   return "essay"
 }
-export async function extractQuestionsFromHtml(html: string): Promise<ExtractedQuestion[]> {
+export async function extractQuestionsFromHtml(html: string, sourcePages?: number[]): Promise<ExtractedQuestion[]> {
   const questions: ExtractedQuestion[] = []
 
   const { cleanHtml } = extractRedText(html)
 
-  const sectionRegex = new RegExp(`<p[^>]*>(?:<strong>)?\\s*(?:(?:[一二三四五六七八九十]+|[1-9]|10)\\s*[、.．:：]\\s*)?(${QUESTION_TYPE_SOURCE})(?:[一二三四五六七八九十\\d]+)?\\s*(?:<\\/strong>)?<\\/p>`, "gi")
-  const sections: { type: QuestionType; startIdx: number; content: string }[] = []
+  const sectionRegex = /<(p|h[1-6])\b[^>]*>(?:<strong>)?\s*([^<>]+?)\s*(?:<\/strong>)?<\/\1>/gi
+  const knownHeading = new RegExp(String.raw`^(?:(?:[一二三四五六七八九十]+|[1-9]|10)\s*[、.．:：]\s*)?(${QUESTION_TYPE_SOURCE})(?:[一二三四五六七八九十\d]+)?\s*${SECTION_SCORE_NOTE}$`)
+  const sections: { type: QuestionType; tag?: string; startIdx: number; content: string }[] = []
 
   let sectionMatch
-  const sectionPositions: { type: QuestionType; idx: number }[] = []
+  const sectionPositions: { type: QuestionType; tag?: string; idx: number }[] = []
 
   while ((sectionMatch = sectionRegex.exec(cleanHtml)) !== null) {
-    const typeName = sectionMatch[1]
-    const type = TYPE_MAP[typeName]
+    const heading = sectionMatch[2].trim()
+    const typeName = knownHeading.exec(heading)?.[1]
+    const type = typeName && TYPE_MAP[typeName]
     if (type) {
-      sectionPositions.push({ type, idx: sectionMatch.index })
+      const tag = typeName.startsWith("名词解释") ? "名词解释" : typeName === "简答题" ? typeName : undefined
+      sectionPositions.push({ type, tag, idx: sectionMatch.index })
+    } else if (sectionPositions.at(-1)?.tag && (sectionMatch[1] !== "p" || /^\s*[一二三四五六七八九十]+\s*[、.．:：]/.test(heading))) {
+      // 遇到新大题标题时，后续题目不能继续沿用上一大题的标签。
+      sectionPositions.push({ type: "essay", idx: sectionMatch.index })
     }
   }
 
   for (let i = 0; i < sectionPositions.length; i++) {
-    const { type, idx } = sectionPositions[i]
+    const { type, tag, idx } = sectionPositions[i]
     const endIdx = i + 1 < sectionPositions.length ? sectionPositions[i + 1].idx : cleanHtml.length
     const sectionContent = cleanHtml.substring(idx, endIdx)
-    sections.push({ type, startIdx: idx, content: sectionContent })
+    sections.push({ type, tag, startIdx: idx, content: sectionContent })
   }
 
   if (sections.length === 0) {
@@ -804,11 +801,13 @@ export async function extractQuestionsFromHtml(html: string): Promise<ExtractedQ
 
       questions.push({
         type: questionType,
+        tags: section.tag ? [section.tag] : undefined,
         content: cleanContent,
         options: options.length > 0 ? options : null,
         answer,
         explanation,
-        contentHash: generateHash(cleanContent),
+        contentHash: "",
+        sourcePage: sourcePages?.[(cleanHtml.slice(0, section.startIdx + start.pos).match(/<p\b/gi) || []).length],
       })
     }
   }
@@ -823,6 +822,50 @@ export async function extractQuestionsFromHtml(html: string): Promise<ExtractedQ
   const normalizedQuestions = filteredQuestions.map(q => normalizeQuestion(q))
 
   return normalizedQuestions
+}
+
+export function recognizeParagraphs(
+  texts: string[],
+  sourceKind: StructuredParagraph["sourceKind"] = "paragraph",
+  sourcePages?: number[],
+): ExtractedQuestion[] {
+  const paragraphs = normalizeParagraphs(texts.map((text, sourceIndex) => ({
+    text,
+    sourceIndex,
+    sourceKind,
+    styleHints: {},
+  })))
+
+  return segmentQuestions(paragraphs).flatMap((block) => {
+    const fields = extractFields(block)
+    if (!fields.stem) return []
+    const decision = classifyQuestion({
+      stem: fields.stem,
+      options: fields.options,
+      answer: fields.answer,
+      sectionType: block.sectionType,
+    })
+    const diagnostic: RecognitionDiagnostic = {
+      confidence: Math.min(block.diagnostic.confidence, fields.diagnostic.confidence, decision.confidence),
+      warnings: [...block.diagnostic.warnings, ...fields.diagnostic.warnings, ...decision.warnings],
+      evidence: [...block.diagnostic.evidence, ...fields.diagnostic.evidence, ...decision.evidence],
+    }
+    const question: ExtractedQuestion = {
+      type: decision.type,
+      tags: block.sectionTag ? [block.sectionTag] : undefined,
+      content: fields.stem,
+      options: fields.options.length > 0 ? fields.options : null,
+      answer: fields.answer,
+      explanation: fields.explanation,
+      contentHash: "",
+      diagnostic,
+      sourcePage: sourcePages?.[block.paragraphs[0]?.sourceIndex],
+    }
+    const { filter } = shouldFilterContent(question.content)
+    // 名词解释的题干本身常以“术语：定义”开头，不能按普通元信息过滤。
+    const keepPdfEssay = sourceKind === "pdf-line" && block.sectionType === "essay"
+    return filter && !keepPdfEssay ? [] : [normalizeQuestion(question)]
+  })
 }
 
 // Main function: convert Word file to questions
@@ -853,25 +896,47 @@ export async function parsePdfTextToQuestions(text: string): Promise<ExtractedQu
     throw new Error("未从 PDF 中提取到文本内容")
   }
 
-  return extractQuestionsFromHtml(paragraphsToHtml(paragraphs))
+  const recognized = recognizeParagraphs(paragraphs, "pdf-line")
+  return recognized.length > 0 ? recognized : extractQuestionsFromHtml(paragraphsToHtml(paragraphs))
 }
 
-// Parse PDF files from uploaded buffers. Scanned image-only PDFs still need OCR before import.
+// 保留每一页的位置，扫描图片仍需先进行 OCR。
 export async function parsePdfBuffer(buffer: Buffer): Promise<ExtractedQuestion[]> {
-  const { extractText } = await import("unpdf")
-  const { text } = await extractText(new Uint8Array(buffer), { mergePages: false })
-  const pdfText = Array.isArray(text) ? text.join("\n") : text
+  const { withPdfDocument } = await import("./pdf-document")
+  const pages = await withPdfDocument(buffer, async pdf => {
+    const pages: string[] = []
+    for (let index = 1; index <= pdf.numPages; index++) {
+      const page = await pdf.getPage(index)
+      try {
+        const content = await page.getTextContent()
+        pages.push(content.items.map(item => "str" in item ? item.str + (item.hasEOL ? "\n" : "") : "").join(""))
+      } finally {
+        page.cleanup()
+      }
+    }
+    return pages
+  })
+  if (!pages.some(page => page.trim())) throw new Error("未从 PDF 中提取到文本内容，请确认不是纯扫描图片 PDF")
+  return parsePositionedExercises(pages, 1)
+}
 
-  if (!pdfText.trim()) {
-    throw new Error("未从 PDF 中提取到文本内容，请确认不是纯扫描图片 PDF")
-  }
-
-  return parsePdfTextToQuestions(pdfText)
+export async function parsePositionedExercises(segments: string[], first: number): Promise<ExtractedQuestion[]> {
+  const paragraphs: string[] = []
+  const sourcePages: number[] = []
+  segments.forEach((page, index) => {
+    const lines = pdfTextToParagraphs(page)
+    paragraphs.push(...lines)
+    sourcePages.push(...lines.map(() => index + first))
+  })
+  if (!paragraphs.length) return []
+  const recognized = recognizeParagraphs(paragraphs, "pdf-line", sourcePages)
+  return recognized.length ? recognized : extractQuestionsFromHtml(paragraphsToHtml(paragraphs), sourcePages)
 }
 
 // Parse PowerPoint OOXML files (.pptx/.pptm) and legacy binary .ppt files from uploaded buffers.
 export async function parsePowerPointBuffer(buffer: Buffer): Promise<ExtractedQuestion[]> {
   const paragraphs: string[] = []
+  const sourcePages: number[] = []
 
   try {
     const zip = await JSZip.loadAsync(buffer)
@@ -892,7 +957,9 @@ export async function parsePowerPointBuffer(buffer: Buffer): Promise<ExtractedQu
       if (!file) continue
 
       const slideXml = await file.async("string")
-      paragraphs.push(...extractPowerPointParagraphs(slideXml))
+      const lines = extractPowerPointParagraphs(slideXml)
+      paragraphs.push(...lines)
+      sourcePages.push(...lines.map(() => slide.index))
     }
   } catch {
     const { extractOLE2Text } = await import("./ole2-parser")
@@ -907,5 +974,5 @@ export async function parsePowerPointBuffer(buffer: Buffer): Promise<ExtractedQu
     throw new Error("未从 PPT 中提取到文本内容")
   }
 
-  return extractQuestionsFromHtml(paragraphsToHtml(paragraphs))
+  return extractQuestionsFromHtml(paragraphsToHtml(paragraphs), sourcePages)
 }

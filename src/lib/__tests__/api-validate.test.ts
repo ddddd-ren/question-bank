@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import {
+  PracticeSubmitSchema,
   QuestionQuerySchema,
   requireBody,
   parseBoundedInteger,
@@ -8,6 +9,25 @@ import {
   parseOptionalString,
   validateQuery,
 } from "../api-validate"
+
+describe("PracticeSubmitSchema", () => {
+  it("接受客户端答题契约并丢弃伪造的判分结果", () => {
+    expect(PracticeSubmitSchema.parse({
+      questionId: 7,
+      userAnswer: "AC",
+      isCorrect: true,
+      timeSpent: 12,
+    })).toEqual({
+      questionId: 7,
+      userAnswer: "AC",
+      timeSpent: 12,
+    })
+  })
+
+  it("拒绝空答案", () => {
+    expect(() => PracticeSubmitSchema.parse({ questionId: 7, userAnswer: "" })).toThrow()
+  })
+})
 
 describe("requireBody", () => {
   it("should pass when all required fields are present", () => {

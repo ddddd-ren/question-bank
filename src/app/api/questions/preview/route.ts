@@ -1,122 +1,125 @@
 import { NextRequest, NextResponse } from "next/server"
-import { parsePdfBuffer, parsePowerPointBuffer, parseWordBuffer } from "@/lib/parser"
 import { parseJsonQuestions } from "@/lib/parser/json-parser"
+import { parseCsvQuestions } from "@/lib/parser/csv-parser"
+import { getParserKind } from "@/lib/parser/loader"
 import { applyTemplate, toEditable, fromEditable, renderPreview } from "@/lib/parser/question-templates"
 import { handleApiError, ApiError } from "@/lib/api-error"
 import { checkQuestionQuality, generateQualityReport } from "@/lib/parser/quality-checker"
 import { isQuestionType } from "@/lib/types"
 import { z } from "zod"
+import { withSession } from "@/lib/auth-route"
+import { isImportFileSizeAllowed, MAX_IMPORT_FILE_BYTES, MAX_IMPORT_QUESTIONS, MAX_IMPORT_TEXT_LENGTH } from "@/lib/import-limits"
+import { splitDuplicateQuestions } from "@/lib/import-dedupe"
+import { questionFingerprint } from "@/lib/question-fingerprint"
+
+const TagsSchema = z.array(z.string().trim().min(1).max(50)).max(10).optional()
+
+const BlankSchema = z.object({
+  id: z.number().int().positive(),
+  placeholder: z.string().max(200),
+  answer: z.string().max(5000).optional(),
+})
+
+const PreservedSchema = z.object({
+  sourceType: z.enum(["single", "multiple", "truefalse", "fill", "calculation", "essay", "code"]),
+  options: z.array(z.string().max(2000)).max(20).optional(),
+  answer: z.string().max(10000).optional(),
+  blanks: z.array(BlankSchema).max(100).optional(),
+  warnings: z.array(z.string().max(500)).max(100).optional(),
+})
 
 const PatchRequestSchema = z.object({
   question: z.object({
+    sourcePage: z.number().int().positive().optional(),
     type: z.enum(["single", "multiple", "truefalse", "fill", "calculation", "essay", "code"]),
-    stem: z.string(),
-    options: z.array(z.string()).optional(),
-    answer: z.string().optional(),
-    explanation: z.string().optional(),
+    tags: TagsSchema,
+    stem: z.string().min(1).max(MAX_IMPORT_TEXT_LENGTH),
+    options: z.array(z.string().max(2000)).max(20).optional(),
+    answer: z.string().max(10000).optional(),
+    explanation: z.string().max(MAX_IMPORT_TEXT_LENGTH).optional(),
+    blanks: z.array(BlankSchema).max(100).optional(),
+    preserved: PreservedSchema.optional(),
     blankSlots: z.array(z.object({
       index: z.number(),
-      label: z.string(),
-      answer: z.string(),
-    })).optional(),
+      label: z.string().max(200),
+      answer: z.string().max(5000),
+    })).max(100).optional(),
   }),
-  targetType: z.string(),
+  targetType: z.string().optional(),
   index: z.number().int().min(0).optional().default(0),
 })
 
 const PutRequestSchema = z.object({
   questions: z.array(z.object({
+    sourcePage: z.number().int().positive().optional(),
     type: z.enum(["single", "multiple", "truefalse", "fill", "calculation", "essay", "code"]),
-    stem: z.string(),
-    options: z.array(z.string()).optional(),
-    answer: z.string().optional(),
-    explanation: z.string().optional(),
+    tags: TagsSchema,
+    stem: z.string().min(1).max(MAX_IMPORT_TEXT_LENGTH),
+    options: z.array(z.string().max(2000)).max(20).optional(),
+    answer: z.string().max(10000).optional(),
+    explanation: z.string().max(MAX_IMPORT_TEXT_LENGTH).optional(),
+    blanks: z.array(BlankSchema).max(100).optional(),
     blankSlots: z.array(z.object({
       index: z.number(),
-      label: z.string(),
-      answer: z.string(),
-    })).optional(),
-  })).min(1).max(10000),
+      label: z.string().max(200),
+      answer: z.string().max(5000),
+    })).max(100).optional(),
+  })).min(1).max(MAX_IMPORT_QUESTIONS),
   sourceFile: z.string().max(500).optional(),
+  textbook: z.object({ bookId: z.string().uuid(), chapterId: z.string().uuid(), from: z.number().int().positive(), to: z.number().int().positive() }).optional(),
 })
 
-// Parse CSV content
-function parseCsvQuestions(csvContent: string) {
-  const lines = csvContent.split("\n").filter(line => line.trim())
-  if (lines.length < 2) {
-    throw new ApiError(400, "CSV file is empty or format error")
-  }
-
-  const headers = lines[0].split(",").map(h => h.trim().toLowerCase())
-  const questions = []
-
-  for (let i = 1; i < lines.length; i++) {
-    const values = lines[i].match(/(".*?"|[^,]+)/g)?.map(v => v.replace(/^"|"$/g, "").trim()) || []
-
-    if (values.length < 2) continue
-
-    const typeIdx = headers.findIndex(h => h.includes("type"))
-    const contentIdx = headers.findIndex(h => h.includes("content"))
-    const optionsIdx = headers.findIndex(h => h.includes("options"))
-    const answerIdx = headers.findIndex(h => h.includes("answer"))
-    const explanationIdx = headers.findIndex(h => h.includes("explanation"))
-    const tagsIdx = headers.findIndex(h => h.includes("tags"))
-
-    const optionsStr = optionsIdx >= 0 ? values[optionsIdx] : undefined
-    const options = optionsStr ? optionsStr.split("|").map(o => o.trim()) : undefined
-
-    questions.push({
-      type: typeIdx >= 0 ? values[typeIdx] : "essay",
-      content: contentIdx >= 0 ? values[contentIdx] : values[0],
-      options,
-      answer: answerIdx >= 0 ? values[answerIdx] : undefined,
-      explanation: explanationIdx >= 0 ? values[explanationIdx] : undefined,
-      tags: tagsIdx >= 0 ? values[tagsIdx]?.split("|").map(t => t.trim()) : undefined,
-    })
-  }
-
-  return parseJsonQuestions(JSON.stringify({ questions }))
-}
-
-export async function POST(request: NextRequest) {
+export const POST = withSession(async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData()
-    const file = formData.get("file") as File
-
-    if (!file) {
-      throw new ApiError(400, "Please upload a file")
+    const contentLength = Number(request.headers.get("content-length"))
+    if (Number.isFinite(contentLength) && contentLength > MAX_IMPORT_FILE_BYTES + 1024 * 1024) {
+      throw new ApiError(413, "导入文件不能超过 20 MiB")
     }
 
-    const fileName = file.name.toLowerCase()
+    const formData = await request.formData()
+    const file = formData.get("file")
+
+    if (!(file instanceof File)) {
+      throw new ApiError(400, "Please upload a file")
+    }
+    if (!isImportFileSizeAllowed(file.size)) {
+      throw new ApiError(413, "导入文件不能超过 20 MiB")
+    }
+
+    const parserKind = getParserKind(file.name)
     const buffer = Buffer.from(await file.arrayBuffer())
     let questions
 
-    if (fileName.endsWith(".json")) {
+    if (parserKind === "json") {
       const jsonContent = buffer.toString("utf-8")
       questions = parseJsonQuestions(jsonContent)
-    } else if (fileName.endsWith(".csv")) {
+    } else if (parserKind === "csv") {
       const csvContent = buffer.toString("utf-8")
       questions = parseCsvQuestions(csvContent)
-    } else if (fileName.endsWith(".docx")) {
+    } else if (parserKind === "word") {
+      const { parseWordBuffer } = await import("@/lib/parser/question-extractor")
       questions = await parseWordBuffer(buffer)
-    } else if (fileName.endsWith(".pdf")) {
+    } else if (parserKind === "pdf") {
+      const { parsePdfBuffer } = await import("@/lib/parser/question-extractor")
       questions = await parsePdfBuffer(buffer)
-    } else if (fileName.endsWith(".ppt") || fileName.endsWith(".pptx") || fileName.endsWith(".pptm")) {
-      questions = await parsePowerPointBuffer(buffer)
     } else {
-      throw new ApiError(400, "Unsupported file format. Please use .docx, .pdf, .ppt, .pptx, .pptm, .json or .csv")
+      const { parsePowerPointBuffer } = await import("@/lib/parser/question-extractor")
+      questions = await parsePowerPointBuffer(buffer)
     }
 
     // Generate quality report
     const qualityReport = generateQualityReport(questions, 0)
 
-    const editableQuestions = questions.map((q, idx) => ({
-      index: idx,
-      original: q,
-      editable: toEditable(q),
-      preview: renderPreview(q),
-      quality: qualityReport.questions[idx],
-    }))
+    const editableQuestions = questions.map((question, idx) => {
+      const q = { ...question, tags: TagsSchema.parse(question.tags) }
+      return {
+        index: idx,
+        original: q,
+        editable: toEditable(q),
+        preview: renderPreview(q),
+        quality: qualityReport.questions[idx],
+      }
+    })
 
     return NextResponse.json({
       total: questions.length,
@@ -130,28 +133,30 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})
 
 // Apply a question template while still in import preview.
-export async function PATCH(request: NextRequest) {
+export const PATCH = withSession(async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
     const validated = PatchRequestSchema.parse(body)
     const { question, targetType, index } = validated
 
-    if (!isQuestionType(targetType)) {
+    if (targetType !== undefined && !isQuestionType(targetType)) {
       throw new ApiError(400, "无效的题型模板")
     }
 
-    const editable = applyTemplate(question, targetType)
+    const editable = targetType && isQuestionType(targetType) ? applyTemplate(question, targetType) : question
     const standard = fromEditable(editable)
     const normalizedQuestion = {
-      type: standard.type || targetType,
+      type: standard.type || editable.type,
       content: standard.content || editable.stem,
       options: standard.options || null,
       answer: standard.answer || null,
       explanation: standard.explanation || null,
       contentHash: "",
+      sourcePage: standard.sourcePage,
+      tags: standard.tags,
     }
 
     return NextResponse.json({
@@ -162,59 +167,70 @@ export async function PATCH(request: NextRequest) {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})
 
 // Batch import
-export async function PUT(request: NextRequest) {
+export const PUT = withSession(async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const validated = PutRequestSchema.parse(body)
     const { questions, sourceFile } = validated
 
-    const crypto = await import("crypto")
     const { createQuestionsBatch, getQuestionsByHashes } = await import("@/lib/db/queries")
 
-    const processedQuestions = questions.map(editable => {
+    const processedQuestions = questions.map((editable, index) => {
       const standard = fromEditable(editable)
-      const content = (standard.content || "").replace(/\s+/g, "").toLowerCase()
-      const hash = crypto.createHash("md5").update(content).digest("hex")
+      const hash = questionFingerprint({ type: standard.type || "essay", content: standard.content || "", options: standard.options })
 
-      return {
+      const question = {
         type: standard.type || "essay",
         content: standard.content || "",
-        options: standard.options ? JSON.stringify(standard.options) : null,
+        options: standard.options || null,
         answer: standard.answer || null,
         explanation: standard.explanation || null,
         contentHash: hash,
+        tags: standard.tags,
         sourceFile: sourceFile || null,
+        sourcePage: standard.sourcePage ?? null,
       }
+      const quality = checkQuestionQuality({ ...question, sourcePage: standard.sourcePage }, index)
+      if (quality.issueCount.error > 0) {
+        throw new ApiError(400, `第 ${index + 1} 题仍有错误：${quality.question.issues.find(issue => issue.severity === "error")?.message}`)
+      }
+      return { ...question, options: question.options ? JSON.stringify(question.options) : null }
     })
 
+    if (validated.textbook) {
+      const { saveTextbookExercises } = await import("@/lib/db/textbook-exercises")
+      const result = saveTextbookExercises(validated.textbook, processedQuestions.map(q => ({ ...q, tags: q.tags?.length ? JSON.stringify(q.tags) : null })))
+      return NextResponse.json(result)
+    }
     const hashes = processedQuestions.map(q => q.contentHash)
     const existingQuestions = await getQuestionsByHashes(hashes)
-    const existingHashSet = new Set(existingQuestions.map(q => q.contentHash))
+    const existingHashSet = new Set(existingQuestions.map(q => q.fingerprint!))
 
-    const toImport = []
-    const duplicates = []
-
-    for (const q of processedQuestions) {
-      if (existingHashSet.has(q.contentHash)) {
-        duplicates.push({ content: q.content.substring(0, 50) })
-      } else {
-        toImport.push(q)
-      }
-    }
+    const dedupeResult = splitDuplicateQuestions(processedQuestions, existingHashSet)
+    const toImport = dedupeResult.unique
+    const duplicates = dedupeResult.duplicateCount
 
     if (toImport.length > 0) {
-      await createQuestionsBatch(toImport)
+      const byHash = new Map(toImport.map(q => [q.contentHash, q]))
+      for (const q of processedQuestions) {
+        const kept = byHash.get(q.contentHash)
+        if (kept && kept !== q && q.tags?.length) {
+          kept.tags = [...new Set([...(kept.tags ?? []), ...q.tags])]
+          if (kept.tags.length > 10) throw new ApiError(400, "同题合并后的标签超过 10 个，请调整后导入")
+        }
+      }
+      await createQuestionsBatch(toImport.map(q => ({ ...q, tags: q.tags?.length ? JSON.stringify(q.tags) : null })))
     }
 
     return NextResponse.json({
       imported: toImport.length,
-      duplicates: duplicates.length,
+      duplicates,
       total: questions.length,
     })
   } catch (error) {
     return handleApiError(error)
   }
-}
+})

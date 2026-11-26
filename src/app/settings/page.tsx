@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Settings, CheckCircle, XCircle, Loader2, Zap, Save, TestTube, Eye, EyeOff } from "lucide-react"
 import { showToast } from "@/components/toast"
+import { BackupSettings } from "@/components/backup-settings"
 
 interface AiProvider {
   id: string
@@ -163,8 +164,10 @@ export default function SettingsPage() {
           <Settings className="h-8 w-8 text-primary" />
           设置
         </h1>
-        <p className="text-muted-foreground mt-2">配置AI大模型API服务</p>
+        <p className="text-muted-foreground mt-2">管理数据备份与 AI 服务</p>
       </div>
+
+      <BackupSettings />
 
       {loadError && (
         <Card className="border-red-500/40 bg-red-500/5">

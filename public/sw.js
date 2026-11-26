@@ -1,21 +1,7 @@
-const CACHE_NAME = "question-bank-v1"
-const STATIC_ASSETS = [
-  "/",
-  "/bank",
-  "/practice",
-  "/favorites",
-  "/mistakes",
-  "/settings",
-  "/import",
-  "/subjects",
-]
+const CACHE_NAME = "question-bank-v2"
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS)
-    })
-  )
+  event.waitUntil(Promise.resolve())
   self.skipWaiting()
 })
 
@@ -38,35 +24,15 @@ self.addEventListener("fetch", (event) => {
 
   if (request.method !== "GET") return
 
-  if (url.pathname.startsWith("/api/")) {
-    event.respondWith(networkFirst(request))
-    return
-  }
+  // API 与页面数据可能包含个人题库内容，不进入 Cache Storage。
+  if (url.pathname.startsWith("/api/")) return
 
   if (url.pathname.startsWith("/_next/static/")) {
     event.respondWith(cacheFirst(request))
     return
   }
 
-  event.respondWith(staleWhileRevalidate(request))
 })
-
-async function networkFirst(request) {
-  try {
-    const response = await fetch(request)
-    if (response.ok) {
-      const cache = await caches.open(CACHE_NAME)
-      cache.put(request, response.clone())
-    }
-    return response
-  } catch {
-    const cached = await caches.match(request)
-    return cached || new Response(JSON.stringify({ error: "离线状态" }), {
-      status: 503,
-      headers: { "Content-Type": "application/json" },
-    })
-  }
-}
 
 async function cacheFirst(request) {
   const cached = await caches.match(request)
@@ -82,18 +48,4 @@ async function cacheFirst(request) {
   } catch {
     return new Response("", { status: 408 })
   }
-}
-
-async function staleWhileRevalidate(request) {
-  const cache = await caches.open(CACHE_NAME)
-  const cached = await cache.match(request)
-
-  const fetchPromise = fetch(request).then((response) => {
-    if (response.ok) {
-      cache.put(request, response.clone())
-    }
-    return response
-  }).catch(() => cached)
-
-  return cached || fetchPromise
 }

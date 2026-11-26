@@ -1,6 +1,7 @@
 import useSWR from "swr"
+import { createPaginatedKey, type PaginatedQuery } from "@/lib/query-key"
 
-const fetcher = async (url: string) => {
+export const fetcher = async (url: string) => {
   const res = await fetch(url)
   if (!res.ok) {
     const error = new Error("请求失败")
@@ -8,6 +9,51 @@ const fetcher = async (url: string) => {
     throw error
   }
   return res.json()
+}
+
+export interface PaginatedResponse<T> {
+  data: T[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
+}
+
+export interface FavoriteItem {
+  id: number
+  questionId: number
+  createdAt: string
+  questionContent: string
+  questionType: string
+  questionAnswer: string | null
+}
+
+export interface MistakeRecord {
+  id: number
+  questionId: number
+  userAnswer: string
+  timeSpent: number
+  createdAt: string
+  questionContent: string
+  questionType: string
+  questionOptions: string[] | null
+  questionAnswer: string | null
+}
+
+const paginatedOptions = {
+  revalidateOnFocus: false,
+  dedupingInterval: 2000,
+  keepPreviousData: true,
+}
+
+export function useFavorites(filters: PaginatedQuery) {
+  const key = createPaginatedKey("/api/favorites", filters)
+  return useSWR<PaginatedResponse<FavoriteItem>>(key, fetcher, paginatedOptions)
+}
+
+export function useMistakes(filters: PaginatedQuery) {
+  const key = createPaginatedKey("/api/mistakes", filters)
+  return useSWR<PaginatedResponse<MistakeRecord>>(key, fetcher, paginatedOptions)
 }
 
 export function useDashboard() {

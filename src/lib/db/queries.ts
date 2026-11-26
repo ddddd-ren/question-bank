@@ -18,8 +18,10 @@ import {
   type PracticeRecord,
   type NewPracticeRecord,
 } from "./schema"
-import { eq, and, like, desc, sql, count, inArray } from "drizzle-orm"
+import { eq, and, like, desc, sql, count, inArray, isNull } from "drizzle-orm"
 import { type QuestionType, isQuestionType } from "@/lib/types"
+import { shouldUseFullTextSearch, toFtsPhrase } from "./search"
+import { questionFingerprint } from "@/lib/question-fingerprint"
 
 const SQLITE_IN_CHUNK_SIZE = 500
 const SQLITE_INSERT_CHUNK_SIZE = 400
@@ -37,18 +39,15 @@ const QUESTION_COLUMNS = [
   "difficulty",
   "tags",
   "content_hash AS contentHash",
+  "fingerprint",
+  "archived_at AS archivedAt",
   "source_file AS sourceFile",
+  "source_page AS sourcePage",
   "created_at AS createdAt",
   "updated_at AS updatedAt",
 ]
 
 const QUESTION_SELECT_COLUMNS = QUESTION_COLUMNS.join(", ")
-const ALIASED_QUESTION_SELECT_COLUMNS = QUESTION_COLUMNS
-  .map((column) => {
-    const [source, alias] = column.split(/\s+AS\s+/i)
-    return alias ? `q.${source} AS ${alias}` : `q.${source}`
-  })
-  .join(", ")
 
 function chunkArray<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = []
@@ -60,17 +59,32 @@ function chunkArray<T>(items: T[], size: number): T[][] {
 
 // Questions CRUD
 export async function createQuestion(data: NewQuestion): Promise<Question> {
-  const [result] = await db.insert(questions).values(data).returning()
+  const [result] = await db.insert(questions).values({
+    ...data,
+    contentHash: questionFingerprint(data),
+    fingerprint: questionFingerprint(data),
+  }).returning()
   return result
 }
 
 export async function createQuestionsBatch(data: NewQuestion[]): Promise<Question[]> {
+  return insertQuestionsBatch(data)
+}
+
+export function insertQuestionsBatch(data: NewQuestion[]): Question[] {
   if (data.length === 0) return []
 
   const created: Question[] = []
-  for (const batch of chunkArray(data, SQLITE_INSERT_CHUNK_SIZE)) {
-    created.push(...await db.insert(questions).values(batch).returning())
-  }
+  const insertAll = sqliteDb.transaction((items: NewQuestion[]) => {
+    for (const batch of chunkArray(items, SQLITE_INSERT_CHUNK_SIZE)) {
+      created.push(...db.insert(questions).values(batch.map((item) => ({
+        ...item,
+        contentHash: questionFingerprint(item),
+        fingerprint: questionFingerprint(item),
+      }))).returning().prepare().all())
+    }
+  })
+  insertAll(data)
   return created
 }
 
@@ -90,10 +104,12 @@ export async function getQuestions(options?: {
   pageSize?: number
   hasAnswer?: boolean
   recentDays?: number
+  difficulty?: number
 }): Promise<{ data: Question[]; total: number }> {
   const { type, categoryId, subjectId, knowledgePointId, search, page = 1, pageSize = 20 } = options || {}
 
-  const whereConditions = []
+  const whereConditions = [isNull(questions.archivedAt)]
+  if (options?.difficulty) whereConditions.push(eq(questions.difficulty, options.difficulty))
 
   if (type) {
     whereConditions.push(eq(questions.type, type as QuestionType))
@@ -108,7 +124,15 @@ export async function getQuestions(options?: {
     whereConditions.push(eq(questions.knowledgePointId, knowledgePointId))
   }
   if (search) {
-    whereConditions.push(like(questions.content, `%${search}%`))
+    const normalizedSearch = search.trim()
+    if (shouldUseFullTextSearch(normalizedSearch)) {
+      whereConditions.push(sql`${questions.id} IN (
+        SELECT rowid FROM questions_fts
+        WHERE questions_fts MATCH ${toFtsPhrase(normalizedSearch)}
+      )`)
+    } else if (normalizedSearch) {
+      whereConditions.push(like(questions.content, `%${normalizedSearch}%`))
+    }
   }
   if (options?.hasAnswer) {
     whereConditions.push(sql`${questions.answer} IS NOT NULL AND ${questions.answer} != ''`)
@@ -140,13 +164,20 @@ export async function getRandomQuestions(options?: {
   subjectId?: number
   knowledgePointId?: number
   count?: number
+  difficulty?: number
+  unansweredFirst?: boolean
 }): Promise<Question[]> {
-  const { type, categoryId, subjectId, knowledgePointId, count: limit = 10 } = options || {}
+  const { type, categoryId, subjectId, knowledgePointId, count = 10 } = options || {}
+  const limit = Math.min(100, Math.max(1, Math.floor(count)))
 
   if (type && !isQuestionType(type)) return []
 
-  const conditions: string[] = []
+  const conditions: string[] = ["archived_at IS NULL"]
   const params: (string | number)[] = []
+  if (options?.difficulty) {
+    conditions.push("difficulty = ?")
+    params.push(options.difficulty)
+  }
   if (type) {
     conditions.push("type = ?")
     params.push(type)
@@ -164,17 +195,24 @@ export async function getRandomQuestions(options?: {
     params.push(knowledgePointId)
   }
 
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : ""
-
-  const rows = sqliteDb
-    .prepare(`SELECT ${QUESTION_SELECT_COLUMNS} FROM questions ${whereClause} ORDER BY RANDOM() LIMIT ?`)
-    .all(...params, limit) as Question[]
-
-  return rows
+  const answered = options?.unansweredFirst
+    ? "EXISTS(SELECT 1 FROM practice_records p WHERE p.question_id = questions.id)"
+    : "0"
+  return sqliteDb.prepare(`
+    WITH picked AS MATERIALIZED (
+      SELECT id AS picked_id, ${answered} AS answered, random() AS draw
+      FROM questions WHERE ${conditions.join(" AND ")}
+      ORDER BY answered, draw
+      LIMIT ?
+    )
+    SELECT ${QUESTION_SELECT_COLUMNS}
+    FROM picked JOIN questions ON questions.id = picked.picked_id
+    ORDER BY picked.answered, picked.draw
+  `).all(...params, limit) as Question[]
 }
 
 const questionByHashStmt = sqliteDb.prepare(
-  `SELECT ${QUESTION_SELECT_COLUMNS} FROM questions WHERE content_hash = ?`
+  `SELECT ${QUESTION_SELECT_COLUMNS} FROM questions WHERE fingerprint = ?`
 )
 
 export async function getQuestionByHash(contentHash: string): Promise<Question | undefined> {
@@ -187,7 +225,7 @@ export async function getQuestionsByHashes(hashes: string[]): Promise<Question[]
   const found: Question[] = []
   for (const batch of chunkArray(Array.from(new Set(hashes)), SQLITE_IN_CHUNK_SIZE)) {
     found.push(...await db.query.questions.findMany({
-      where: inArray(questions.contentHash, batch),
+      where: inArray(questions.fingerprint, batch),
     }))
   }
   return found
@@ -199,24 +237,38 @@ export async function getQuestionsByIds(ids: number[]): Promise<Question[]> {
   const found: Question[] = []
   for (const batch of chunkArray(Array.from(new Set(ids)), SQLITE_IN_CHUNK_SIZE)) {
     found.push(...await db.query.questions.findMany({
-      where: inArray(questions.id, batch),
+      where: and(inArray(questions.id, batch), isNull(questions.archivedAt)),
     }))
   }
   return found
 }
 
 export async function updateQuestion(id: number, data: Partial<NewQuestion>): Promise<Question | undefined> {
-  const [result] = await db
-    .update(questions)
-    .set({ ...data, updatedAt: new Date().toISOString() })
-    .where(eq(questions.id, id))
-    .returning()
-  return result
+  return sqliteDb.transaction(() => {
+    const current = sqliteDb.prepare(`SELECT ${QUESTION_SELECT_COLUMNS} FROM questions WHERE id = ?`).get(id) as Question | undefined
+    if (!current) return undefined
+    const definedData = Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined))
+    const fingerprint = questionFingerprint({ ...current, ...definedData })
+    // 旧唯一键附带 ID，既释放编辑前键值，也不合并已有重复历史题。
+    return db.update(questions)
+      .set({ ...definedData, fingerprint, contentHash: `${fingerprint}:${id}`, updatedAt: new Date().toISOString() })
+      .where(eq(questions.id, id)).returning().prepare().all()[0]
+  })()
 }
 
 export async function deleteQuestion(id: number): Promise<boolean> {
-  const result = await db.delete(questions).where(eq(questions.id, id))
+  const result = await db.update(questions).set({ archivedAt: new Date().toISOString() }).where(eq(questions.id, id))
   return result.changes > 0
+}
+
+export async function clearQuestions(): Promise<number> {
+  return sqliteDb.transaction(() => {
+    sqliteDb.prepare("DELETE FROM question_learning").run()
+    sqliteDb.prepare("DELETE FROM practice_records").run()
+    sqliteDb.prepare("DELETE FROM ai_cache").run()
+    sqliteDb.prepare("DELETE FROM favorites").run()
+    return (sqliteDb.prepare("DELETE FROM questions").run() as { changes: number }).changes
+  })()
 }
 
 // Categories CRUD
@@ -346,41 +398,43 @@ export async function createPracticeRecord(data: NewPracticeRecord): Promise<Pra
 }
 
 const practiceStatsStmt = sqliteDb.prepare(
-  "SELECT count(*) AS total, sum(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) AS correct FROM practice_records"
+  "SELECT count(*) AS total, count(is_correct) AS graded, sum(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) AS correct FROM practice_records"
 )
 
 export async function getPracticeStats(): Promise<{
   total: number
   correct: number
   accuracy: number
+  graded: number
+  pending: number
 }> {
-  const result = practiceStatsStmt.get() as { total: number; correct: number | null }
+  const result = practiceStatsStmt.get() as { total: number; graded: number; correct: number | null }
 
   const total = result.total
   const correct = result.correct || 0
-  const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0
+  const accuracy = result.graded > 0 ? Math.round((correct / result.graded) * 100) : 0
 
-  return { total, correct, accuracy }
+  return { total, correct, accuracy, graded: result.graded, pending: total - result.graded }
 }
 
 // AI Cache
-export async function getAiCache(questionId: number, model: string) {
+export async function getAiCache(questionId: number, cacheKey: string) {
   return await db.query.aiCache.findFirst({
     where: and(
       eq(aiCache.questionId, questionId),
-      eq(aiCache.model, model)
+      eq(aiCache.cacheKey, cacheKey),
     ),
   })
 }
 
-export async function setAiCache(questionId: number, model: string, response: string) {
-  return await db.insert(aiCache).values({ questionId, model, response })
+export async function setAiCache(questionId: number, model: string, cacheKey: string, response: string) {
+  return await db.insert(aiCache).values({ questionId, model, cacheKey, response })
 }
 
 // Stats
 export async function getQuestionStats() {
-  const totalStmt = sqliteDb.prepare("SELECT count(*) AS count FROM questions")
-  const typeStmt = sqliteDb.prepare("SELECT type, count(*) AS count FROM questions GROUP BY type")
+  const totalStmt = sqliteDb.prepare("SELECT count(*) AS count FROM questions WHERE archived_at IS NULL")
+  const typeStmt = sqliteDb.prepare("SELECT type, count(*) AS count FROM questions WHERE archived_at IS NULL GROUP BY type")
   const categoryStmt = sqliteDb.prepare("SELECT count(*) AS count FROM categories")
 
   const totalResult = totalStmt.get() as { count: number }
@@ -455,7 +509,7 @@ export async function getFavorites(options?: {
 }) {
   const { type, search, page = 1, pageSize = 20 } = options || {}
 
-  const conditions = []
+  const conditions = [isNull(questions.archivedAt)]
   if (type && type !== "all" && isQuestionType(type)) {
     conditions.push(eq(questions.type, type))
   }
@@ -498,7 +552,10 @@ export async function getMistakes(options?: {
 }) {
   const { type, search, page = 1, pageSize = 20 } = options || {}
 
-  const conditions = [eq(practiceRecords.isCorrect, false)]
+  const conditions = [eq(practiceRecords.isCorrect, false),
+    sql`${questions.archivedAt} IS NULL`,
+    sql`EXISTS (SELECT 1 FROM question_learning l WHERE l.question_id=${questions.id} AND l.status='learning')`,
+    sql`${practiceRecords.id} = (SELECT max(p.id) FROM practice_records p WHERE p.question_id=${questions.id} AND p.is_correct=0)`]
   if (type && type !== "all" && isQuestionType(type)) {
     conditions.push(eq(questions.type, type))
   }
@@ -535,63 +592,15 @@ export async function getMistakes(options?: {
   return { data, total: totalResult.count, page, pageSize, totalPages: Math.max(1, Math.ceil(totalResult.count / pageSize)) }
 }
 
-export async function deletePracticeRecord(id: number): Promise<boolean> {
-  const result = await db.delete(practiceRecords).where(eq(practiceRecords.id, id))
-  return result.changes > 0
-}
-
-
 // Wrong questions for re-practice
-export async function getWrongQuestions(options?: {
-  type?: string
-  count?: number
-}): Promise<Question[]> {
-  const { type, count: limit = 20 } = options || {}
-
-  if (type && type !== "all" && !isQuestionType(type)) return []
-
-  let query = `
-    SELECT ${ALIASED_QUESTION_SELECT_COLUMNS}
-    FROM questions q
-    INNER JOIN (
-      SELECT question_id, MAX(created_at) as latest
-      FROM practice_records
-      WHERE is_correct = 0
-      GROUP BY question_id
-      ORDER BY latest DESC
-      LIMIT ?
-    ) pr ON q.id = pr.question_id
-  `
-
-  const params: (string | number)[] = [limit]
-
-  if (type && type !== "all") {
-    query = `
-      SELECT ${ALIASED_QUESTION_SELECT_COLUMNS}
-      FROM questions q
-      INNER JOIN (
-        SELECT question_id, MAX(created_at) as latest
-        FROM practice_records
-        WHERE is_correct = 0
-        GROUP BY question_id
-        ORDER BY latest DESC
-      ) pr ON q.id = pr.question_id
-      WHERE q.type = ?
-      LIMIT ?
-    `
-    params.unshift(type)
-  }
-
-  return sqliteDb.prepare(query).all(...params) as Question[]
+export async function getWrongQuestions(options?: { type?: string; count?: number }): Promise<Question[]> {
+  const { getReviewQuestions } = await import("./learning")
+  return getReviewQuestions({ ...options, count: options?.count ?? 20, mode: "mistakes" })
 }
-
-const wrongQuestionCountStmt = sqliteDb.prepare(
-  "SELECT count(DISTINCT question_id) AS count FROM practice_records WHERE is_correct = 0"
-)
 
 export async function getWrongQuestionCount(): Promise<number> {
-  const result = wrongQuestionCountStmt.get() as { count: number }
-  return result.count
+  return (sqliteDb.prepare(`SELECT count(*) AS count FROM question_learning l JOIN questions q ON q.id=l.question_id
+    WHERE q.archived_at IS NULL AND l.status='learning' AND EXISTS(SELECT 1 FROM practice_records p WHERE p.question_id=q.id AND p.is_correct=0)`).get() as { count: number }).count
 }
 
 export async function getSubjectStats() {
@@ -603,7 +612,7 @@ export async function getSubjectStats() {
       count(q.id) AS questionCount,
       sum(CASE WHEN q.answer IS NOT NULL AND q.answer != '' THEN 1 ELSE 0 END) AS withAnswer
     FROM subjects s
-    LEFT JOIN questions q ON q.subject_id = s.id
+    LEFT JOIN questions q ON q.subject_id = s.id AND q.archived_at IS NULL
     GROUP BY s.id, s.name, s.code
     ORDER BY questionCount DESC
   `).all() as { id: number; name: string; code: string | null; questionCount: number; withAnswer: number }[]
@@ -618,7 +627,7 @@ export async function getKnowledgePointStats() {
       s.name AS subjectName,
       count(q.id) AS questionCount
     FROM knowledge_points kp
-    LEFT JOIN questions q ON q.knowledge_point_id = kp.id
+    LEFT JOIN questions q ON q.knowledge_point_id = kp.id AND q.archived_at IS NULL
     LEFT JOIN subjects s ON s.id = kp.subject_id
     GROUP BY kp.id, kp.name, kp.subject_id, s.name
     ORDER BY questionCount DESC
@@ -633,6 +642,7 @@ export async function getDifficultyStats() {
       count(*) AS count,
       sum(CASE WHEN answer IS NOT NULL AND answer != '' THEN 1 ELSE 0 END) AS withAnswer
     FROM questions
+    WHERE archived_at IS NULL
     GROUP BY difficulty
     ORDER BY difficulty
   `).all() as { difficulty: number; count: number; withAnswer: number }[]

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getQuestions } from "@/lib/db/queries"
 import { serializeQuestions } from "@/lib/db/serialize"
 import { handleApiError } from "@/lib/api-error"
+import { withSession } from "@/lib/auth-route"
 import { z } from "zod"
 
 const ExportQuerySchema = z.object({
@@ -19,7 +20,7 @@ function escapeCsvField(field: string): string {
   return field
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withSession(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const query = ExportQuerySchema.parse(Object.fromEntries(searchParams.entries()))
@@ -73,4 +74,4 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})

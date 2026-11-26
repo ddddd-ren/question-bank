@@ -10,7 +10,7 @@ interface AnswerRecord {
   questionContent: string
   userAnswer: string
   correctAnswer: string | null
-  isCorrect: boolean
+  isCorrect: boolean | null
   timeSpent: number
 }
 
@@ -27,10 +27,11 @@ export const PracticeReview = React.memo(function PracticeReview({
   onRestart,
   onJumpToQuestion,
 }: PracticeReviewProps) {
-  const wrongRecords = records.filter(r => !r.isCorrect)
+  const wrongRecords = records.filter(r => r.isCorrect === false)
   const totalTime = records.reduce((sum, r) => sum + r.timeSpent, 0)
   const avgTime = records.length > 0 ? Math.round(totalTime / records.length) : 0
-  const accuracy = records.length > 0 ? Math.round((totalCorrect / records.length) * 100) : 0
+  const graded = records.filter(r => r.isCorrect !== null).length
+  const accuracy = graded > 0 ? Math.round((totalCorrect / graded) * 100) : 0
 
   // Calculate max streak
   let maxStreak = 0
@@ -42,13 +43,14 @@ export const PracticeReview = React.memo(function PracticeReview({
 
   const slowest = [...records].sort((a, b) => b.timeSpent - a.timeSpent).slice(0, 3)
 
-  const grade = accuracy >= 90 ? "S" : accuracy >= 80 ? "A" : accuracy >= 70 ? "B" : accuracy >= 60 ? "C" : "D"
-  const gradeColor = { S: "text-amber-500", A: "text-green-500", B: "text-blue-500", C: "text-orange-500", D: "text-red-500" }[grade]
+  const grade = graded === 0 ? "—" : accuracy >= 90 ? "S" : accuracy >= 80 ? "A" : accuracy >= 70 ? "B" : accuracy >= 60 ? "C" : "D"
+  const gradeColor = { S: "text-amber-500", A: "text-green-500", B: "text-blue-500", C: "text-orange-500", D: "text-red-500", "—": "text-muted-foreground" }[grade]
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="page-header">
         <h1 className="text-2xl font-bold">练习回顾</h1>
+        <p className="text-sm text-muted-foreground">已判分 {graded} 题，待判分 {records.length - graded} 题；正确率仅计算已判分题目。</p>
       </div>
 
       <Card>
@@ -88,14 +90,15 @@ export const PracticeReview = React.memo(function PracticeReview({
             <h3 className="text-sm font-medium mb-3">答题情况</h3>
             <div className="flex flex-wrap gap-2">
               {records.map((r, i) => (
-                <div
-                  key={i}
-                  className={`w-10 h-10 rounded-lg flex items-center justify-center text-xs font-medium cursor-pointer transition-transform hover:scale-110 ${r.isCorrect ? "bg-green-500 text-white" : "bg-red-500 text-white"}`}
-                  title={`第${i + 1}题: ${r.isCorrect ? "正确" : "错误"} | ${r.timeSpent}s`}
+                <button
+                  type="button"
+                  key={r.questionId}
+                  className={`w-10 h-10 rounded-lg flex items-center justify-center text-xs font-medium cursor-pointer transition-transform hover:scale-110 ${r.isCorrect === true ? "bg-green-500 text-white" : r.isCorrect === false ? "bg-red-500 text-white" : "bg-slate-400 text-white"}`}
+                  title={`第${i + 1}题: ${r.isCorrect === true ? "正确" : r.isCorrect === false ? "错误" : "未判分"} | ${r.timeSpent}s`}
                   onClick={() => onJumpToQuestion(r.questionId)}
                 >
                   {i + 1}
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -112,8 +115,8 @@ export const PracticeReview = React.memo(function PracticeReview({
                     <span className="text-muted-foreground w-6">{i + 1}.</span>
                     <span className="flex-1 truncate">{r.questionContent}...</span>
                     <span className="text-muted-foreground">{r.timeSpent}s</span>
-                    <span className={r.isCorrect ? "text-green-500" : "text-red-500"}>
-                      {r.isCorrect ? "对" : "错"}
+                    <span className={r.isCorrect === true ? "text-green-500" : r.isCorrect === false ? "text-red-500" : "text-muted-foreground"}>
+                      {r.isCorrect === true ? "对" : r.isCorrect === false ? "错" : "未判分"}
                     </span>
                   </div>
                 ))}

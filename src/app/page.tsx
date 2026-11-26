@@ -1,6 +1,8 @@
 "use client"
 
 import Link from "next/link"
+import { useEffect, useState } from "react"
+import { PRACTICE_DRAFT_KEY, parsePracticeDraft } from "@/lib/practice-draft"
 import { AlertTriangle, ArrowRight, BookOpen, CheckCircle2, Clock, Flame, Layers, PenTool, RefreshCw, Target, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,6 +12,13 @@ import { useDashboard } from "@/hooks/use-swr-fetcher"
 
 export default function Dashboard() {
   const { data, error, isLoading, mutate } = useDashboard()
+  const [hasDraft, setHasDraft] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try { setHasDraft(Boolean(parsePracticeDraft(localStorage.getItem(PRACTICE_DRAFT_KEY)))) } catch { setHasDraft(false) }
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [])
 
   if (error) {
     return (
@@ -55,6 +64,7 @@ export default function Dashboard() {
   const practiceStats = data?.practice
   const recentActivity = data?.recentActivity || []
   const wrongCount = data?.wrongCount || 0
+  const dueCount = data?.dueReviewCount || 0
   const subjectStats = data?.subjectStats || []
   const difficultyStats = data?.difficultyStats || []
 
@@ -88,6 +98,11 @@ export default function Dashboard() {
         <p className="text-muted-foreground mt-2">欢迎回来，继续你的学习之旅</p>
       </div>
 
+      {hasDraft && <Button asChild variant="outline"><Link href="/practice?mode=resume">继续上次练习</Link></Button>}
+      <p className="text-sm text-muted-foreground">已判分 {practiceStats?.graded ?? 0} 次，待判分 {practiceStats?.pending ?? 0} 次；正确率仅包含已判分作答。</p>
+      {data?.weakKnowledgePoints?.length > 0 && <Card className="p-5"><h2 className="font-medium mb-3">薄弱知识点</h2><div className="flex flex-wrap gap-2">
+        {data.weakKnowledgePoints.map((point: {id:number;name:string;subjectId:number;wrong:number;graded:number}) => <Button key={point.id} variant="outline" asChild><Link href={`/practice?subjectId=${point.subjectId}&knowledgePointId=${point.id}`}>{point.name} · {point.wrong}/{point.graded} 次答错</Link></Button>)}
+      </div></Card>}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {statCards.map((stat, index) => (
           <Card key={stat.title} className="card-hover animate-slide-up" style={{ animationDelay: `${index * 100}ms` }}>
@@ -109,20 +124,20 @@ export default function Dashboard() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Flame className="h-5 w-5 text-primary" />
-              今日复盘
+              今日复习
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {wrongCount > 0 ? (
+            {dueCount > 0 ? (
               <div className="space-y-4">
                 <p className="text-muted-foreground">
-                  你有 <span className="font-bold text-foreground">{wrongCount}</span> 道错题需要复盘
+                  你有 <span className="font-bold text-foreground">{dueCount}</span> 道题目已到复习日期
                 </p>
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <Button asChild className="flex-1">
-                    <Link href="/practice?mode=mistakes">
+                    <Link href="/practice?mode=due">
                       <XCircle className="h-4 w-4 mr-2" />
-                      错题重练
+                      开始今日复习
                       <ArrowRight className="h-4 w-4 ml-2" />
                     </Link>
                   </Button>
@@ -134,7 +149,7 @@ export default function Dashboard() {
             ) : (
               <div className="text-center py-4">
                 <CheckCircle2 className="h-10 w-10 mx-auto text-green-500 mb-2" />
-                <p className="text-muted-foreground">没有待复盘的错题，继续保持！</p>
+                <p className="text-muted-foreground">今天没有到期题目，继续保持！</p>
                 <Button asChild variant="link" className="mt-2">
                   <Link href="/practice">开始练习</Link>
                 </Button>
@@ -153,10 +168,10 @@ export default function Dashboard() {
           <CardContent>
             {recentActivity.length > 0 ? (
               <div className="space-y-3">
-                {recentActivity.map((item: { id: number; questionContent: string | null; questionType: string | null; isCorrect: boolean; timeSpent: number }) => (
+                {recentActivity.map((item: { id: number; questionContent: string | null; questionType: string | null; isCorrect: boolean | null; timeSpent: number }) => (
                   <div key={item.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors">
-                    <div className={`p-1.5 rounded-lg ${item.isCorrect ? "bg-green-500/10" : "bg-red-500/10"}`}>
-                      {item.isCorrect ? (
+                    <div className={`p-1.5 rounded-lg ${item.isCorrect === null ? "bg-muted" : item.isCorrect ? "bg-green-500/10" : "bg-red-500/10"}`}>
+                      {item.isCorrect === null ? <Clock className="h-4 w-4 text-muted-foreground" aria-label="待判分" /> : item.isCorrect ? (
                         <CheckCircle2 className="h-4 w-4 text-green-500" />
                       ) : (
                         <XCircle className="h-4 w-4 text-red-500" />

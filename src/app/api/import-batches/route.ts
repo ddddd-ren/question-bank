@@ -3,8 +3,9 @@ import { db } from "@/lib/db"
 import { questions } from "@/lib/db/schema"
 import { sql, desc } from "drizzle-orm"
 import { handleApiError } from "@/lib/api-error"
+import { withSession } from "@/lib/auth-route"
 
-export async function GET() {
+export const GET = withSession(async function GET() {
   try {
     const batches = await db
       .select({
@@ -21,4 +22,4 @@ export async function GET() {
   } catch (error) {
     return handleApiError(error)
   }
-}
+})

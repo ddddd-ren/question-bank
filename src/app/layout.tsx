@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next"
 import "./globals.css"
+import "katex/dist/katex.min.css"
 import { Nav } from "@/components/nav"
 import { ToastContainer } from "@/components/toast"
 import { ClientErrorBoundary } from "@/components/client-error-boundary"
