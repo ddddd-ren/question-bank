@@ -80,4 +80,31 @@ describe("学习记录", () => {
     expect(record.isCorrect).toBe(true)
   })
 
+  it("错题分析按学科和知识点汇总已判分作答，并统计错题数", async () => {
+    const subjectId = Number(db.prepare("INSERT INTO subjects(name) VALUES('分析学科')").run().lastInsertRowid)
+    const knowledgePointId = Number(db.prepare("INSERT INTO knowledge_points(subject_id,name) VALUES(?, '分析知识点')").run(subjectId).lastInsertRowid)
+    const analyzedQuestionId = Number(db.prepare(
+      "INSERT INTO questions(type,content,answer,content_hash,subject_id,knowledge_point_id) VALUES('single','分析题','A','analysis-test',?,?)"
+    ).run(subjectId, knowledgePointId).lastInsertRowid)
+    const pendingQuestionId = Number(db.prepare(
+      "INSERT INTO questions(type,content,content_hash,subject_id,knowledge_point_id) VALUES('essay','待判分','analysis-pending',?,?)"
+    ).run(subjectId, knowledgePointId).lastInsertRowid)
+
+    learning.saveLearningRecord({ questionId: analyzedQuestionId, attemptKey: "analysis-wrong-1", userAnswer: "B" })
+    learning.saveLearningRecord({ questionId: analyzedQuestionId, attemptKey: "analysis-correct-1", userAnswer: "A" })
+    learning.saveLearningRecord({ questionId: pendingQuestionId, attemptKey: "analysis-pending-1", userAnswer: "未判分" })
+
+    expect(learning.getMistakeAnalysisStats({ subjectId, days: 30 })).toEqual([
+      expect.objectContaining({
+        subjectId,
+        subjectName: "分析学科",
+        knowledgePointId,
+        knowledgePointName: "分析知识点",
+        graded: 2,
+        correct: 1,
+        wrong: 1,
+        wrongQuestions: 1,
+      }),
+    ])
+  })
 })

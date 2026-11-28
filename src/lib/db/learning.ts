@@ -74,11 +74,44 @@ export function getReviewQuestions(options: { type?: string; subjectId?: number;
   return rows.map((q) => ({ ...q, subjectId: q.subject_id, knowledgePointId: q.knowledge_point_id, categoryId: q.category_id, contentHash: q.content_hash, sourceFile: q.source_file, sourcePage: q.source_page, randomKey: q.random_key, createdAt: q.created_at, updatedAt: q.updated_at, archivedAt: q.archived_at })) as Question[]
 }
 
-export function getWeakKnowledgePoints() {
-  return sqliteDb.prepare(`SELECT k.id,k.name,k.subject_id AS subjectId,count(*) AS graded,
-    sum(CASE WHEN p.is_correct=0 THEN 1 ELSE 0 END) AS wrong
-    FROM practice_records p JOIN questions q ON q.id=p.question_id JOIN knowledge_points k ON k.id=q.knowledge_point_id
-    WHERE p.is_correct IS NOT NULL AND q.archived_at IS NULL GROUP BY k.id
-    HAVING sum(CASE WHEN p.is_correct=0 THEN 1 ELSE 0 END)>0
-    ORDER BY 1.0*sum(CASE WHEN p.is_correct=0 THEN 1 ELSE 0 END)/count(*) DESC LIMIT 5`).all()
+export function getMistakeAnalysisStats(options: { subjectId?: number; days?: 30 | null }) {
+  const conditions = ["p.is_correct IS NOT NULL", "q.archived_at IS NULL"]
+  const values: (number | string)[] = []
+
+  if (options.subjectId !== undefined) {
+    conditions.push("q.subject_id=?")
+    values.push(options.subjectId)
+  }
+  if (options.days === 30) {
+    conditions.push("p.created_at >= datetime('now', ?)")
+    values.push("-30 days")
+  }
+
+  return sqliteDb.prepare(`
+    SELECT s.id AS subjectId,
+      coalesce(s.name, '未归类学科') AS subjectName,
+      k.id AS knowledgePointId,
+      coalesce(k.name, '未归类知识点') AS knowledgePointName,
+      count(*) AS graded,
+      sum(CASE WHEN p.is_correct=1 THEN 1 ELSE 0 END) AS correct,
+      sum(CASE WHEN p.is_correct=0 THEN 1 ELSE 0 END) AS wrong,
+      count(DISTINCT CASE WHEN p.is_correct=0 THEN q.id END) AS wrongQuestions
+    FROM practice_records p
+    JOIN questions q ON q.id=p.question_id
+    LEFT JOIN subjects s ON s.id=q.subject_id
+    LEFT JOIN knowledge_points k ON k.id=q.knowledge_point_id
+    WHERE ${conditions.join(" AND ")}
+    GROUP BY s.id, s.name, k.id, k.name
+    ORDER BY 1.0*sum(CASE WHEN p.is_correct=0 THEN 1 ELSE 0 END)/count(*) DESC,
+      wrong DESC, graded DESC
+  `).all(...values) as {
+    subjectId: number | null
+    subjectName: string
+    knowledgePointId: number | null
+    knowledgePointName: string
+    graded: number
+    correct: number
+    wrong: number
+    wrongQuestions: number
+  }[]
 }

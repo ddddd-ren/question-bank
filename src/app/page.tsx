@@ -7,6 +7,7 @@ import { AlertTriangle, ArrowRight, BookOpen, CheckCircle2, Clock, Flame, Layers
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { MistakeAnalysis } from "@/components/dashboard/mistake-analysis"
 import { typeLabels } from "@/lib/constants"
 import { useDashboard } from "@/hooks/use-swr-fetcher"
 
@@ -100,9 +101,6 @@ export default function Dashboard() {
 
       {hasDraft && <Button asChild variant="outline"><Link href="/practice?mode=resume">继续上次练习</Link></Button>}
       <p className="text-sm text-muted-foreground">已判分 {practiceStats?.graded ?? 0} 次，待判分 {practiceStats?.pending ?? 0} 次；正确率仅包含已判分作答。</p>
-      {data?.weakKnowledgePoints?.length > 0 && <Card className="p-5"><h2 className="font-medium mb-3">薄弱知识点</h2><div className="flex flex-wrap gap-2">
-        {data.weakKnowledgePoints.map((point: {id:number;name:string;subjectId:number;wrong:number;graded:number}) => <Button key={point.id} variant="outline" asChild><Link href={`/practice?subjectId=${point.subjectId}&knowledgePointId=${point.id}`}>{point.name} · {point.wrong}/{point.graded} 次答错</Link></Button>)}
-      </div></Card>}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {statCards.map((stat, index) => (
           <Card key={stat.title} className="card-hover animate-slide-up" style={{ animationDelay: `${index * 100}ms` }}>
@@ -118,6 +116,8 @@ export default function Dashboard() {
           </Card>
         ))}
       </div>
+
+      <MistakeAnalysis />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="animate-slide-up" style={{ animationDelay: "400ms" }}>

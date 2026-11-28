@@ -1,4 +1,4 @@
-import { getDueReviewCount, getWeakKnowledgePoints } from "@/lib/db/learning"
+import { getDueReviewCount } from "@/lib/db/learning"
 import { NextResponse } from "next/server"
 import { 
   getRecentActivity, 
@@ -30,7 +30,6 @@ export const GET = withSession(async function GET() {
 
     return NextResponse.json({
       dueReviewCount: getDueReviewCount(),
-      weakKnowledgePoints: getWeakKnowledgePoints(),
       practice: practiceStats,
       questions: questionStats,
       recentActivity,
