@@ -8,7 +8,7 @@ export function proxy(request: NextRequest) {
   if (!isPublicPath(pathname)) {
     const sessionToken = request.cookies.get(AUTH_COOKIE_NAME)?.value
     if (!isSessionTokenValid(sessionToken)) {
-      if (pathname.startsWith("/api/")) {
+      if (pathname.startsWith("/api/") || process.env.NEXT_PUBLIC_QUESTION_BANK_DESKTOP === "1") {
         return NextResponse.json(
           { error: "未授权访问" },
           { status: 401, headers: { "Cache-Control": "private, no-store" } },

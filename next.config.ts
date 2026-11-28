@@ -6,9 +6,15 @@ const pdfAssets = [
   "./node_modules/pdfjs-dist/standard_fonts/*",
   "./node_modules/pdfjs-dist/LICENSE",
 ];
+const isWindowsPackage = process.env.QUESTION_BANK_WINDOWS_PACKAGE === "1";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  distDir: isWindowsPackage ? "output/windows-next-build" : ".next",
+  env: { NEXT_PUBLIC_QUESTION_BANK_DESKTOP: isWindowsPackage ? "1" : "0" },
+  async redirects() {
+    return isWindowsPackage ? [{ source: "/login", destination: "/", permanent: false }] : [];
+  },
   poweredByHeader: false,
   reactStrictMode: true,
   experimental: {

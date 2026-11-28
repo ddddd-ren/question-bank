@@ -20,6 +20,7 @@ const navItems = [
   { href: "/favorites", label: "收藏", icon: Heart },
   { href: "/settings", label: "设置", icon: Settings },
 ]
+const showLogout = process.env.NEXT_PUBLIC_QUESTION_BANK_DESKTOP !== "1"
 
 export function Nav() {
   const pathname = usePathname()
@@ -75,7 +76,7 @@ export function Nav() {
             })}
           </nav>
           <ThemeToggle />
-          <button
+          {showLogout && <button
             type="button"
             onClick={logout}
             className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-border/70 bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -83,12 +84,12 @@ export function Nav() {
             title="退出登录"
           >
             <LogOut className="h-4 w-4" />
-          </button>
+          </button>}
         </div>
 
         <div className="flex lg:hidden items-center gap-2">
           <ThemeToggle />
-          <button
+          {showLogout && <button
             type="button"
             onClick={logout}
             className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-border/70 bg-card text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -96,7 +97,7 @@ export function Nav() {
             title="退出登录"
           >
             <LogOut className="h-4 w-4" />
-          </button>
+          </button>}
           <button
             type="button"
             onClick={toggleMobileMenu}

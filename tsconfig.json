@@ -28,7 +28,9 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts"
+    "**/*.mts",
+    "output/windows-next-build/types/**/*.ts",
+    "output/windows-next-build/dev/types/**/*.ts"
   ],
   "exclude": ["node_modules", "vitest.config.ts"]
 }
