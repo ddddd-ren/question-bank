@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-const { app, BrowserWindow, dialog, shell } = require("electron")
+const { app, BrowserWindow, dialog, Menu, shell } = require("electron")
 const { spawn } = require("node:child_process")
 const crypto = require("node:crypto")
 const fs = require("node:fs")
@@ -41,6 +41,48 @@ if (!app.requestSingleInstanceLock()) {
 
   async function startApplication() {
     try {
+      Menu.setApplicationMenu(Menu.buildFromTemplate([
+        {
+          label: "文件(&F)",
+          submenu: [{ role: "quit", label: "退出" }],
+        },
+        {
+          label: "编辑(&E)",
+          submenu: [
+            { role: "undo", label: "撤销" },
+            { role: "redo", label: "重做" },
+            { type: "separator" },
+            { role: "cut", label: "剪切" },
+            { role: "copy", label: "复制" },
+            { role: "paste", label: "粘贴" },
+            { role: "delete", label: "删除" },
+            { type: "separator" },
+            { role: "selectAll", label: "全选" },
+          ],
+        },
+        {
+          label: "视图(&V)",
+          submenu: [
+            { role: "reload", label: "重新加载" },
+            { role: "forceReload", label: "强制重新加载" },
+            { role: "toggleDevTools", label: "切换开发者工具" },
+            { type: "separator" },
+            { role: "resetZoom", label: "实际大小" },
+            { role: "zoomIn", label: "放大" },
+            { role: "zoomOut", label: "缩小" },
+            { type: "separator" },
+            { role: "togglefullscreen", label: "切换全屏" },
+          ],
+        },
+        {
+          label: "窗口(&W)",
+          submenu: [
+            { role: "minimize", label: "最小化" },
+            { role: "zoom", label: "最大化或还原" },
+            { role: "close", label: "关闭窗口" },
+          ],
+        },
+      ]))
       fs.mkdirSync(baseDataPath, { recursive: true })
       const databasePath = path.join(baseDataPath, "data", "question-bank.db")
       fs.mkdirSync(path.dirname(databasePath), { recursive: true })
