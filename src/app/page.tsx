@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { MistakeAnalysis } from "@/components/dashboard/mistake-analysis"
+import { UpdateNotice } from "@/components/dashboard/update-notice"
 import { typeLabels } from "@/lib/constants"
 import { useDashboard } from "@/hooks/use-swr-fetcher"
 
@@ -99,6 +100,7 @@ export default function Dashboard() {
         <p className="text-muted-foreground mt-2">欢迎回来，继续你的学习之旅</p>
       </div>
 
+      <UpdateNotice />
       {hasDraft && <Button asChild variant="outline"><Link href="/practice?mode=resume">继续上次练习</Link></Button>}
       <p className="text-sm text-muted-foreground">已判分 {practiceStats?.graded ?? 0} 次，待判分 {practiceStats?.pending ?? 0} 次；正确率仅包含已判分作答。</p>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
